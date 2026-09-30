@@ -19,12 +19,14 @@
 		if (!handed) me.check();
 	});
 
-	// A user's Library is the shelf, their own account and what the Library is.
-	// A page whose every control the door refuses is worse than no page at all.
-	const OTHERS_MAY = ['/', '/account', '/about'];
+	// A user's Library is the shelf, their own account, what the Library is and
+	// how OPUS works. A page whose every control the door refuses is worse than
+	// no page at all.
+	const OTHERS_MAY = ['/', '/account', '/about', '/help'];
 	const demo = import.meta.env.VITE_OPUS_DEMO === '1';
+	const othersMay = (at: string) => OTHERS_MAY.includes(at) || at.startsWith('/help/');
 	$effect(() => {
-		if (me.open && !me.admin && !handed && !OTHERS_MAY.includes(page.url.pathname)) goto('/');
+		if (me.open && !me.admin && !handed && !othersMay(page.url.pathname)) goto('/');
 	});
 
 	// A user has one reason to be here and it is the photographs. Searching for a
