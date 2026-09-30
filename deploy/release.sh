@@ -56,7 +56,7 @@ ok "all three modules and their submodules are public"
 
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-scripts/package-suite.sh "$OUT" >/dev/null
+scripts/package-suite.sh "$OUT" || die "package-suite.sh refused the suite"
 SUITE="$OUT/opus-suite-$VERSION.tar.gz"
 [[ -f "$SUITE" ]] || die "package-suite.sh did not produce $(basename "$SUITE")"
 ASSETS=("$SUITE" "$SUITE.sha256" "$OUT"/opus-tv-*.apk "$OUT"/opus-music-*.apk)

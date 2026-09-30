@@ -68,13 +68,25 @@ chmod +x "$STAGE/$NAME/install.sh" "$STAGE/$NAME/library/install.sh" "$STAGE/$NA
 	sha256sum player/android/dist/opus-player.apk player/android/dist/opus-tv.apk player/android/dist/opus-music.apk > SHA256SUMS
 )
 
-# The APKs are zip archives; the gate reads what is inside them.
+# Every repo tree, submodules included, is gated with its own repo's allow list;
+# a path-blind scan of the staged copy would misreport their test fixtures. What
+# only the archive carries is gated as loose files: the APKs are zip archives, so
+# the gate reads what is inside them.
+for repo in "$LIBRARY" "$DOWNLOADS" "$PLAYER"; do
+	mapfile -t subs < <(git -C "$repo" submodule foreach --quiet --recursive 'echo "$toplevel/$sm_path"')
+	for tree in "$repo" "${subs[@]}"; do
+		"$GATE" scan "$tree"
+	done
+done
 for apk in opus-player opus-music; do
 	mkdir -p "$STAGE/unpacked/$apk"
 	python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
 		"$PLAYER/android/dist/$apk.apk" "$STAGE/unpacked/$apk"
 done
-find "$STAGE/$NAME" "$STAGE/unpacked" -type f -print0 | xargs -0 "$GATE" scan --files
+{
+	find "$STAGE/$NAME" -maxdepth 1 -type f -print0
+	find "$STAGE/$NAME/player/android/dist" "$STAGE/unpacked" -type f -print0
+} | xargs -0 "$GATE" scan --files
 
 ARCHIVE="$OUT/$NAME.tar.gz"
 tar -C "$STAGE" -czf "$ARCHIVE" "$NAME"
