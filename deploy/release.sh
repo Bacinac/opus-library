@@ -35,8 +35,16 @@ VERSION="$(tr -d ' \t\n\r' < VERSION).$(git rev-list --count HEAD)"
 TAG="v$VERSION"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && die "tag $TAG already exists"
 
-# Asked anonymously, as the stranger unpacking the suite would.
-public_commit() { curl -fsS -o /dev/null "https://api.github.com/repos/$1/commits/$2"; }
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+# Asked anonymously, as the stranger unpacking the suite would, and
+# over git: the anonymous REST API allows 60 requests an hour per address,
+# which a dry run and a release from one network already spend.
+git init -q --bare "$WORK/probe"
+public_commit() {
+	GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+		git -C "$WORK/probe" fetch -q --depth=1 --filter=blob:none --no-tags "https://github.com/$1.git" "$2" 2>/dev/null
+}
 public_tree() {
 	local repo=$1 slug=$2 head key url name path pin
 	head=$(git -C "$repo" rev-parse HEAD)
@@ -54,8 +62,7 @@ public_tree "$DOWNLOADS" Bacinac/opus-downloads
 public_tree "$PLAYER" Bacinac/opus-player
 ok "all three modules and their submodules are public"
 
-OUT=$(mktemp -d)
-trap 'rm -rf "$OUT"' EXIT
+OUT=$WORK/release
 scripts/package-suite.sh "$OUT" || die "package-suite.sh refused the suite"
 SUITE="$OUT/opus-suite-$VERSION.tar.gz"
 [[ -f "$SUITE" ]] || die "package-suite.sh did not produce $(basename "$SUITE")"
