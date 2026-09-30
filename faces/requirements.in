@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+opencv-python-headless
+# the base image's openvino takes numpy below 2.6
+numpy<2.6
+pillow

@@ -1,0 +1,26 @@
+--- CPU: poster frame at 0.5s ---
+--- QSV decode - frame ---
+
+real	0m0.305s
+user	0m0.708s
+sys	0m0.077s
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+--- VAAPI decode - frame ---
+
+real	0m0.261s
+user	0m0.044s
+sys	0m0.201s
+
+real	0m0.168s
+user	0m0.044s
+sys	0m0.138s
+-rw-r--r-- 1 root root 251063 Aug 24 15:14 /tmp/a.jpg
+-rw-r--r-- 1 root root 181628 Aug 24 15:14 /tmp/b.jpg
+-rw-r--r-- 1 root root 169357 Aug 24 15:14 /tmp/c.jpg

@@ -1,0 +1,225 @@
+# The project name is set explicitly rather than derived from the folder, and
+# the containers carry the module in their name: Library and Downloads run on
+# the same box in production.
+name: opus-library
+
+# Docker's default json-file driver has no ceiling, and this box also holds the
+# music, the films and the download landing zone — a log is the last thing that
+# should be what fills it. Applied to every service by anchor so a new one
+# cannot be added without one.
+x-log: &log
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  backend:
+    # what the installation's plugins (opus_core/plugins.py) need is installed
+    # from the directory OPUS_PLUGINS names, and that directory is mounted over
+    # what the image baked, like the code
+    build:
+      context: ./backend
+      additional_contexts:
+        plugins: ${OPUS_PLUGINS:-./plugins}
+    container_name: opus_library_backend
+    logging: *log
+    # Application code runs as the owner of writable Library volumes. The
+    # database keeps its own image user; original-media mounts are read-only.
+    user: "${OPUS_APP_UID:-1000}:${OPUS_APP_GID:-1000}"
+    env_file: .env
+    environment:
+      # dev opts into auto-reload via .env; production runs the baked code plain
+      OPUS_DEV_RELOAD: ${OPUS_DEV_RELOAD:-0}
+      OPUS_DATABASE_URL: postgresql+psycopg://opus:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/opus
+      # Arbitrary non-root UIDs have no image-owned home; tools that need a
+      # transient cache use the writable tmpfs instead of the source mount.
+      HOME: /tmp
+    ports:
+      - "8095:8095"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/api/ping', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${OPUS_BACKEND_MEMORY_LIMIT:-3g}
+    pids_limit: ${OPUS_BACKEND_PIDS_LIMIT:-512}
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./backend:/app:ro
+      - ${OPUS_PLUGINS:-./plugins}:/plugins:ro
+      - downloads:/downloads
+      - music:/music
+      - movies:/movies
+      - television:/television
+      - video:/video
+      # read-only, and that is the design rather than a precaution: the photo
+      # half never writes under this tree, and mounting it :ro is what makes
+      # that a property of the installation instead of a promise in the code
+      - photos:/photos:ro
+      # the derivatives, writable and its own — which is what lets the tree
+      # above stay read-only
+      - derivatives:/derivatives
+      # the private half. Writable, and the one volume here that a backup must
+      # carry: for a phone that is gone, this is the only copy left.
+      - vault:/vault
+      # the same tree once more, writable, for the only two things that write to
+      # it: taking in an offered picture and moving it to its year
+      - photos:/photos-write
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    # OPUS_UI_TARGET=prod (default) → vite build (adapter-node) served by
+    # server.js with the /api proxy; =dev → Vite dev server + HMR off the bind
+    # mounts below (which are inert in prod: server.js serves the baked build).
+    build:
+      context: ./frontend
+      target: ${OPUS_UI_TARGET:-prod}
+      args:
+        VITE_OPUS_DOWNLOADS_URL: ${VITE_OPUS_DOWNLOADS_URL:-}
+        VITE_OPUS_PLAYER_URL: ${VITE_OPUS_PLAYER_URL:-}
+    image: opus/library-ui:${OPUS_UI_TARGET:-prod}
+    container_name: opus_library_frontend
+    logging: *log
+    environment:
+      OPUS_DEV_HOST: ${OPUS_DEV_HOST:-}
+      OPUS_API_URL: http://backend:8095
+      OPUS_TRUSTED_PROXIES: ${OPUS_TRUSTED_PROXIES:-}
+      # the dev server reads them at runtime; the prod build takes them as args
+      VITE_OPUS_DOWNLOADS_URL: ${VITE_OPUS_DOWNLOADS_URL:-}
+      VITE_OPUS_PLAYER_URL: ${VITE_OPUS_PLAYER_URL:-}
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/static:/app/static
+      - ./frontend/svelte.config.js:/app/svelte.config.js
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+    ports:
+      - "5280:5173"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${OPUS_FRONTEND_MEMORY_LIMIT:-512m}
+    pids_limit: ${OPUS_FRONTEND_PIDS_LIMIT:-128}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  faces:
+    build: ./faces
+    container_name: opus_library_faces
+    logging: *log
+    env_file: .env
+    environment:
+      FACES_DEVICE: ${FACES_DEVICE:-GPU}
+      FACES_BATCH: ${FACES_BATCH:-32}
+    # Only where the card is. Dev has no Arc, so a profile keeps this out of the
+    # way there rather than having it fail on every `compose up`.
+    profiles: ["faces"]
+    devices:
+      - ${FACES_RENDER_NODE:-/dev/dri/renderD129}:/dev/dri/renderD129
+    volumes:
+      - face_models:/models
+      - derivatives:/derivatives:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${OPUS_FACES_MEMORY_LIMIT:-6g}
+    pids_limit: ${OPUS_FACES_PIDS_LIMIT:-256}
+    restart: unless-stopped
+
+  postgres:
+    # pgvector's own build and not postgres:18 plus an extension, because the
+    # extension has to match the server it is loaded into. The -trixie tag and
+    # not the plain one: that is Debian 12 and glibc 2.36, and dropping glibc
+    # under an existing PGDATA changes collation — which is how an index quietly
+    # stops finding rows it still contains.
+    image: pgvector/pgvector:pg18-trixie
+    container_name: opus_library_postgres
+    logging: *log
+    environment:
+      POSTGRES_USER: opus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: opus
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql
+    mem_limit: ${OPUS_DATABASE_MEMORY_LIMIT:-2g}
+    pids_limit: ${OPUS_DATABASE_PIDS_LIMIT:-128}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # without this the database stays down after a host reboot while backend,
+    # which does restart, spins on "failed to resolve host 'postgres'" forever
+    restart: unless-stopped
+
+# The libraries and the landing zone, env-parameterized (DIDA pattern): dev
+# falls back to in-repo ./volumes/* folders, production on the media host uses
+# local binds — same compose, .env decides.
+volumes:
+  face_models:
+  vault:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${OPUS_VAULT_DEVICE:-/mnt/docker/opus-library/volumes/vault}
+  derivatives:
+    driver: local
+    driver_opts:
+      type: ${OPUS_DERIVATIVES_VOLUME_TYPE:-none}
+      o: ${OPUS_DERIVATIVES_VOLUME_OPTS:-bind}
+      device: ${OPUS_DERIVATIVES_DEVICE:-/mnt/docker/opus-library/volumes/derivatives}
+  photos:
+    driver: local
+    driver_opts:
+      type: ${OPUS_PHOTOS_VOLUME_TYPE:-none}
+      o: ${OPUS_PHOTOS_VOLUME_OPTS:-bind}
+      device: ${OPUS_PHOTOS_DEVICE:-/mnt/docker/opus-library/volumes/photos}
+  music:
+    driver: local
+    driver_opts:
+      type: ${OPUS_MUSIC_VOLUME_TYPE:-none}
+      o: ${OPUS_MUSIC_VOLUME_OPTS:-bind}
+      device: ${OPUS_MUSIC_DEVICE:-/mnt/docker/opus-library/volumes/music}
+  movies:
+    driver: local
+    driver_opts:
+      type: ${OPUS_MOVIES_VOLUME_TYPE:-none}
+      o: ${OPUS_MOVIES_VOLUME_OPTS:-bind}
+      device: ${OPUS_MOVIES_DEVICE:-/mnt/docker/opus-library/volumes/movies}
+  television:
+    driver: local
+    driver_opts:
+      type: ${OPUS_TV_VOLUME_TYPE:-none}
+      o: ${OPUS_TV_VOLUME_OPTS:-bind}
+      device: ${OPUS_TV_DEVICE:-/mnt/docker/opus-library/volumes/television}
+  video:
+    driver: local
+    driver_opts:
+      type: ${OPUS_VIDEO_VOLUME_TYPE:-none}
+      o: ${OPUS_VIDEO_VOLUME_OPTS:-bind}
+      device: ${OPUS_VIDEO_DEVICE:-/mnt/docker/opus-library/volumes/video}
+  downloads:
+    driver: local
+    driver_opts:
+      type: ${OPUS_DOWNLOADS_VOLUME_TYPE:-none}
+      o: ${OPUS_DOWNLOADS_VOLUME_OPTS:-bind}
+      device: ${OPUS_DOWNLOADS_DEVICE:-/mnt/docker/opus-library/volumes/downloads}
+
+# No download workers here. Everything the library acquires comes through
+# OPUS · Downloads, which owns the engines. Its address is a runtime setting
+# on the Settings page, not an entry in this file.

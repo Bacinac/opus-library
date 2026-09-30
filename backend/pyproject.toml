@@ -1,0 +1,35 @@
+[project]
+name = "opus-library"
+version = "0.1.0"
+description = "Video and music library — one catalogue, one queue, one settings page"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]>=2.0",
+    "pgvector>=0.4",
+    "psycopg[binary]",
+    "alembic",
+    "httpx",
+    "pydantic-settings",
+    "mutagen",
+    "rapidfuzz",
+    "yt-dlp",
+    "guessit",
+    "py3langid",
+    # the system libvips, driven in-process. NOT pyvips[binary]: that wheel
+    # bundles a libvips which cannot encode AVIF at all.
+    "pyvips",
+    "thumbhash",
+    # AES-GCM, and only for one thing: a picture whose owner has handed over its
+    # key so the household can have it. The vault key is never here and nothing
+    # else in the vault is readable — see opus.photos.vault.
+    "cryptography",
+    # what a country is called in Croatian and in English, from the CLDR the
+    # browsers name it from, so a search for Italija finds what a tile calls it
+    "babel",
+    "webauthn",
+]
+
+[tool.setuptools]
+packages = ["opus"]
