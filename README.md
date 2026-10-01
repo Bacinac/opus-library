@@ -11,6 +11,8 @@ plays it on whatever it runs on: a television, a phone or a DAC. Each module is
 an application of its own, with its own address and its own release; they share
 the sign-in, the look and the words.
 
+**Try it:** [demo-opus-library.boskovic.biz](https://demo-opus-library.boskovic.biz), the real interface with a made-up household inside.
+
 ## What it does
 
 It follows artists and series and knows what has newly come out. For every
