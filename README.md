@@ -13,6 +13,29 @@ the sign-in, the look and the words.
 
 **Try it:** [demo-opus-library.boskovic.biz](https://demo-opus-library.boskovic.biz), the real interface with a made-up household inside.
 
+<p align="center"><img src="docs/screenshots/tour.webp" alt="OPUS Library in the demo: music, an artist, films and people" width="100%"></p>
+
+<details>
+<summary>More screenshots</summary>
+
+**Music:** the artists on the shelf and how complete their records are.
+
+![Music](docs/screenshots/music.webp)
+
+**Artist:** every release with its date, quality and editions, and what is still on its way.
+
+![Artist](docs/screenshots/artist.webp)
+
+**Films:** every film with its audio and subtitle languages, and a file still waiting to be identified.
+
+![Films](docs/screenshots/films.webp)
+
+**People:** each person through the years, from the faces the library has grouped.
+
+![People](docs/screenshots/people.webp)
+
+</details>
+
 ## What it does
 
 It follows artists and series and knows what has newly come out. For every
