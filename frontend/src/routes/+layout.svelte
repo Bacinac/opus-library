@@ -56,7 +56,7 @@
 		{nav}
 		pathname={page.url.pathname}
 		modules={MODULES}
-		alerts={demo ? [{ key: 'demo', message: t('demo.banner'), tone: 'quiet' as const }] : []}
+		alerts={demo ? [{ key: 'demo', message: t('demo.banner'), tone: 'quiet' as const, href: '/demo-credits.html' }] : []}
 		owner={me.admin}
 		account={me.name ? { username: me.name, href: '/account', onlogout: () => me.logout() } : undefined}
 	>

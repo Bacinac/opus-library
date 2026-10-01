@@ -97,7 +97,7 @@ export const hr = {
 	'detail.subsource.opensubtitles': 'OpenSubtitles',
 	'detail.subsource.youtube': 'YouTube',
 	'detail.subtitles': 'Titlovi',
-	'demo.banner': 'Ovo je javni demo sa sintetičkim podacima. Sve promjene nestaju osvježavanjem stranice.',
+	'demo.banner': 'Javni demo s izmišljenim kućanstvom; promjene nestaju osvježavanjem. Filmovi: Blenderovi otvoreni filmovi (CC BY) · fotografije: Wikimedia Commons (CC0) · autori i licence',
 	'downloads.cancel': 'Otkaži',
 	'downloads.clear': 'Očisti povijest',
 	'downloads.cleared': 'Povijest je očišćena ({n}).',

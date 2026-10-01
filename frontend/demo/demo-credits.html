@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>OPUS demo credits</title>
+	<link rel="icon" href="/favicon.svg" />
+	<style>
+		:root {
+			color-scheme: light dark;
+			--bg: #f6f5f2;
+			--fg: #1d1d1f;
+			--muted: #63636a;
+			--line: #dddbd5;
+			--accent: #b5583f;
+		}
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--bg: #111113;
+				--fg: #ececec;
+				--muted: #9a9aa2;
+				--line: #2a2a2e;
+				--accent: #e08a6f;
+			}
+		}
+		body {
+			margin: 0;
+			background: var(--bg);
+			color: var(--fg);
+			font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif;
+		}
+		main {
+			max-width: 980px;
+			margin: 0 auto;
+			padding: 2.5rem 1rem 4rem;
+		}
+		h1 {
+			font-size: 1.6rem;
+			margin: 0 0 0.75rem;
+		}
+		p {
+			color: var(--muted);
+			max-width: 46rem;
+		}
+		a {
+			color: var(--accent);
+		}
+		ul {
+			list-style: none;
+			padding: 0;
+			margin: 2rem 0 0;
+			display: grid;
+			gap: 0.75rem;
+		}
+		li {
+			display: grid;
+			grid-template-columns: 96px 1fr;
+			gap: 1rem;
+			align-items: center;
+			padding-bottom: 0.75rem;
+			border-bottom: 1px solid var(--line);
+		}
+		img {
+			width: 96px;
+			height: 64px;
+			object-fit: cover;
+			border-radius: 6px;
+			background: var(--line);
+		}
+		.what {
+			font-weight: 600;
+		}
+		.how {
+			color: var(--muted);
+			font-size: 0.9rem;
+		}
+	</style>
+</head>
+<body>
+	<main>
+		<h1>Credits</h1>
+		<p>
+			The films and the series in the OPUS demo are Blender open movies, shown under their Creative
+			Commons licences. The photographs are public-domain (CC0) pictures from Wikimedia Commons; the
+			dates and places the demo gives them are invented.
+		</p>
+		<p>
+			The household, its portraits, the artists, their music and the album covers are invented too.
+			The portraits, covers and artist pictures were generated for this demo, and none of them shows a
+			real person.
+		</p>
+		<p><a href="/">Back to the demo</a></p>
+		<ul id="credits"></ul>
+	</main>
+	<script>
+		fetch('/demo-fixtures.json')
+			.then((r) => r.json())
+			.then(({ credits }) => {
+				const list = document.getElementById('credits');
+				for (const c of credits) {
+					const li = document.createElement('li');
+					const img = document.createElement('img');
+					img.src = c.image;
+					img.alt = '';
+					img.loading = 'lazy';
+					const text = document.createElement('div');
+					const what = document.createElement('div');
+					what.className = 'what';
+					what.textContent = c.what;
+					const by = document.createElement('div');
+					by.append(c.author + ' · ');
+					const licence = document.createElement('a');
+					licence.href = c.license_url;
+					licence.textContent = c.license;
+					const source = document.createElement('a');
+					source.href = c.source;
+					source.textContent = 'source';
+					by.append(licence, ' · ', source);
+					const how = document.createElement('div');
+					how.className = 'how';
+					how.textContent = c.changes;
+					text.append(what, by, how);
+					li.append(img, text);
+					list.append(li);
+				}
+			});
+	</script>
+</body>
+</html>

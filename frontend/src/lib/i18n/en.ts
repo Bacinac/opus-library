@@ -97,7 +97,7 @@ export const en = {
 	'detail.subsource.opensubtitles': 'OpenSubtitles',
 	'detail.subsource.youtube': 'YouTube',
 	'detail.subtitles': 'Subtitles',
-	'demo.banner': 'This is a public demo with synthetic data. All changes disappear when the page is reloaded.',
+	'demo.banner': 'Public demo with an invented household; changes disappear on reload. Films: Blender open movies (CC BY) · photographs: Wikimedia Commons (CC0) · authors and licences',
 	'downloads.cancel': 'Cancel',
 	'downloads.clear': 'Clear history',
 	'downloads.cleared': 'History cleared ({n}).',

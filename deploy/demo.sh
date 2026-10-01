@@ -42,7 +42,7 @@ build() {
 		-v "$repo:$repo" -v "$OUT:$OUT" -w "$repo/frontend" "$@" node:24 \
 		sh -c 'npm ci --no-audit --no-fund --loglevel=error && ./build-demo.sh "$1"' _ "$dest"
 }
-build "$PLAYER" "$OUT/player" -e VITE_OPUS_LIBRARY_URL="$LIBRARY_URL" -e VITE_OPUS_DOWNLOADS_URL="$DOWNLOADS_URL"
+build "$PLAYER" "$OUT/player" -v "$LIBRARY:$LIBRARY:ro" -e OPUS_LIBRARY_SOURCE="$LIBRARY" -e VITE_OPUS_LIBRARY_URL="$LIBRARY_URL" -e VITE_OPUS_DOWNLOADS_URL="$DOWNLOADS_URL"
 build "$LIBRARY" "$OUT/library" -e VITE_OPUS_DOWNLOADS_URL="$DOWNLOADS_URL" -e VITE_OPUS_PLAYER_URL="$PLAYER_URL"
 build "$DOWNLOADS" "$OUT/downloads" -e VITE_OPUS_LIBRARY_URL="$LIBRARY_URL" -e VITE_OPUS_PLAYER_URL="$PLAYER_URL"
 

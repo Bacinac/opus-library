@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600">
-  <defs><linearGradient id="g" y2="1"><stop stop-color="#143f48"/><stop offset=".58" stop-color="#20282d"/><stop offset="1" stop-color="#a95038"/></linearGradient></defs>
-  <rect width="400" height="600" fill="url(#g)"/><circle cx="305" cy="135" r="74" fill="#e9b85c" opacity=".9"/><path d="M0 430l110-130 68 80 72-140 150 190v170H0z" fill="#10191c" opacity=".86"/>
-  <text x="32" y="535" fill="#f5eee5" font-family="sans-serif" font-size="34" font-weight="700">OPUS FILM</text>
-</svg>
