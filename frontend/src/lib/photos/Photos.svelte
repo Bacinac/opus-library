@@ -78,18 +78,6 @@
 </script>
 
 <PageHead>
-	{#snippet aside()}
-		{#if doing || trouble}
-			<p class="doing" class:warn={!!trouble && !doing} title={doing ? '' : stalled}>
-				{#if doing}
-					<span class="spin"></span>
-					{t(PASSES[doing])}
-				{:else}
-					{stalled}
-				{/if}
-			</p>
-		{/if}
-	{/snippet}
 	{#snippet ways()}
 		<Picks
 			picks={views}
@@ -100,6 +88,16 @@
 				chosen = null;
 			}}
 		/>
+		{#if doing || trouble}
+			<p class="doing" class:warn={!!trouble && !doing} title={doing ? '' : stalled}>
+				{#if doing}
+					<span class="spin"></span>
+					{t(PASSES[doing])}
+				{:else}
+					{stalled}
+				{/if}
+			</p>
+		{/if}
 	{/snippet}
 </PageHead>
 
@@ -185,7 +183,7 @@
 		align-items: center;
 		gap: 0.45rem;
 		max-width: min(40rem, 60vw);
-		margin: 0;
+		margin: 0 0 0 auto;
 		font-size: var(--fs-s);
 		color: var(--muted);
 		white-space: nowrap;

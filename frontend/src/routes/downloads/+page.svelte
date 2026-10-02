@@ -13,7 +13,7 @@
 	import { t, type MessageKey } from '$lib/i18n';
 	import {
 		ArmedButton,
-		PageHead,
+		PageActions,
 		Progress,
 		Tag,
 		formatDateTime,
@@ -91,15 +91,13 @@
 	});
 </script>
 
-<PageHead sticky={false}>
-	{#snippet aside()}
-		{#if finishedMusic.length > 0}
-			<ArmedButton tone="quiet" disabled={clearing} onconfirm={clearFinished}>
-				{t('downloads.clear')}
-			</ArmedButton>
-		{/if}
-	{/snippet}
-</PageHead>
+{#if finishedMusic.length > 0}
+	<PageActions>
+		<ArmedButton tone="quiet" disabled={clearing} onconfirm={clearFinished}>
+			{t('downloads.clear')}
+		</ArmedButton>
+	</PageActions>
+{/if}
 
 {#if loaded && rows.length === 0}
 	<p class="muted">{t('downloads.empty')}</p>
