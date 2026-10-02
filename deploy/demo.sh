@@ -46,6 +46,19 @@ build "$PLAYER" "$OUT/player" -v "$LIBRARY:$LIBRARY:ro" -e OPUS_LIBRARY_SOURCE="
 build "$LIBRARY" "$OUT/library" -e VITE_OPUS_DOWNLOADS_URL="$DOWNLOADS_URL" -e VITE_OPUS_PLAYER_URL="$PLAYER_URL"
 build "$DOWNLOADS" "$OUT/downloads" -e VITE_OPUS_LIBRARY_URL="$LIBRARY_URL" -e VITE_OPUS_PLAYER_URL="$PLAYER_URL"
 
+card() {
+	local repo=$1 dest=$2 origin=$3 title=$4 description=$5
+	docker run --rm --user "$(id -u):$(id -g)" -v "$repo:$repo:ro" -v "$OUT:$OUT" node:24 \
+		node "$repo/frontend/src/lib/kit/linkcard.mjs" "$OUT/$dest" "$origin" \
+		"$repo/docs/screenshots/social-preview.png" "$title" "$description"
+}
+card "$PLAYER" player "$PLAYER_URL" "OPUS · Player — live demo" \
+	"One frontend for every screen in the house: films, series, records and the family album. A public demo over an invented household, nothing to install."
+card "$LIBRARY" library "$LIBRARY_URL" "OPUS · Library — live demo" \
+	"One library for music, films, series and photographs: artists and series followed, releases judged, faces gathered into people across the years. A public demo over an invented household."
+card "$DOWNLOADS" downloads "$DOWNLOADS_URL" "OPUS · Downloads — live demo" \
+	"One interface over Usenet, torrents, Soulseek and web video: one search, one queue. A public demo over synthetic data."
+
 find "$OUT" -type f -print0 | xargs -0 "$GATE" scan --files
 
 [[ $DEPLOY == 1 ]] || { echo "OPUS demo built and gated -> $OUT"; exit 0; }
