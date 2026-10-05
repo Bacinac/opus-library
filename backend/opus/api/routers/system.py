@@ -448,13 +448,14 @@ async def auth_add_person(body: NewPerson, request: Request,
 @router.patch("/auth/people/{name}")
 async def auth_amend_person(name: str, body: Amendment, request: Request,
                             session: AsyncSession = Depends(get_session)):
+    await accounts.lock_roster(session)
     me = await _admin(request, session)
     person = await accounts.by_name(session, name)
     if person is None:
         raise HTTPException(404, "no such person")
     if body.password is not None and accounts.too_short(body.password):
         raise HTTPException(400, f"a password needs {accounts.SHORTEST} characters")
-    stepping_down = person.role == opus_auth.ADMIN and (
+    stepping_down = person.role == opus_auth.ADMIN and not person.disabled and (
         (body.role is not None and accounts.standing(body.role) != opus_auth.ADMIN)
         or body.disabled is True)
     if stepping_down and await accounts.admins(session) < 2:
@@ -477,13 +478,14 @@ async def auth_amend_person(name: str, body: Amendment, request: Request,
 @router.delete("/auth/people/{name}")
 async def auth_remove_person(name: str, request: Request,
                              session: AsyncSession = Depends(get_session)):
+    await accounts.lock_roster(session)
     me = await _admin(request, session)
     person = await accounts.by_name(session, name)
     if person is None:
         raise HTTPException(404, "no such person")
     if person.id == me.id:
         raise HTTPException(409, "removing yourself would end the session doing it")
-    if person.role == opus_auth.ADMIN and await accounts.admins(session) < 2:
+    if person.role == opus_auth.ADMIN and not person.disabled and await accounts.admins(session) < 2:
         raise HTTPException(409, "the last admin cannot be removed")
     await accounts.remove(session, person)
     return {"removed": person.name}

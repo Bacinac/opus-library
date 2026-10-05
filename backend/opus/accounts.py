@@ -254,6 +254,10 @@ async def admins(session) -> int:
     ) or 0
 
 
+async def lock_roster(session) -> None:
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtext("opus:accounts"))))
+
+
 def shown(person: User) -> dict:
     return {
         "name": person.name,

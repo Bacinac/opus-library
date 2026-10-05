@@ -176,22 +176,25 @@ def consumer(runtime, token: str | None) -> str | None:
 # this the moment it commits — so it is not a cache that can be stale, it is the
 # same answer kept between two questions nobody changed anything in between.
 _held: dict[str, tuple[int, str, bool]] | None = None
+_roster_generation = 0
 
 
 def forget_roster() -> None:
-    global _held
+    global _held, _roster_generation
     _held = None
+    _roster_generation += 1
 
 
 async def roster(session) -> dict[str, tuple[int, str, bool]]:
     """Name to secret version, what standing they have here, and whether they
     have been switched off."""
     global _held
-    if _held is not None:
-        return _held
-    rows = await session.execute(
-        select(User.name, User.version, User.role, User.disabled))
-    _held = {name: (version, role, disabled) for name, version, role, disabled in rows}
+    while _held is None:
+        generation = _roster_generation
+        rows = await session.execute(
+            select(User.name, User.version, User.role, User.disabled))
+        if generation == _roster_generation:
+            _held = {name: (version, role, disabled) for name, version, role, disabled in rows}
     return _held
 
 

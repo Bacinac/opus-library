@@ -1,3 +1,4 @@
+import asyncio
 import json
 from compression import zstd
 
@@ -5,7 +6,7 @@ import opus_auth
 import pytest
 
 from conftest import library, run, signed_in
-from opus import accounts, auth
+from opus import accounts, auth, db
 from opus.config import settings
 from opus.settings_store import RuntimeConfig
 
@@ -148,6 +149,101 @@ def test_standing_follows_the_roster():
     assert auth.standing(ROSTER, cookie("kata", 5)) is None
     assert auth.standing(ROSTER, cookie("filip", 2)) is None
     assert auth.whoami(ROSTER, cookie("gost", 1)) == "gost"
+
+
+@pytest.mark.parametrize("change", ["remove", "role", "disabled", "secret"])
+def test_an_inflight_roster_read_cannot_restore_revoked_access(quick, change):
+    async def scenario():
+        async with db.SessionLocal() as session:
+            person = await accounts.add(session, "boss", "a-long-enough-secret", role="admin")
+            original = cookie(person.name, person.version)
+            identity = person.id
+        began, released = asyncio.Event(), asyncio.Event()
+        async with db.SessionLocal() as reader:
+            class Delayed:
+                first = True
+
+                async def execute(self, query):
+                    rows = await reader.execute(query)
+                    if self.first:
+                        self.first = False
+                        began.set()
+                        await released.wait()
+                    return rows
+
+            reading = asyncio.create_task(auth.roster(Delayed()))
+            await asyncio.wait_for(began.wait(), 5)
+            try:
+                async with db.SessionLocal() as writer:
+                    person = await writer.get(auth.User, identity)
+                    if change == "remove":
+                        await accounts.remove(writer, person)
+                    else:
+                        values = {"role": "user", "disabled": True, "secret": "a-new-long-enough-secret"}
+                        await accounts.amend(writer, person, **{change: values[change]})
+            finally:
+                released.set()
+            current = await asyncio.wait_for(reading, 5)
+        assert current == auth._held
+        assert not auth.allowed(RuntimeConfig({}), current, "/api/settings", original)
+        if change == "role":
+            assert auth.standing(current, original) == "user"
+        else:
+            assert auth.whoami(current, original) is None
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("first", ["role", "disabled", "remove"])
+@pytest.mark.parametrize("second", ["role", "disabled", "remove"])
+def test_concurrent_admin_changes_leave_an_active_administrator(quick, monkeypatch, first, second):
+    original_lock, original_count = accounts.lock_roster, accounts.admins
+
+    async def scenario():
+        cookies = {name: await signed_in(name) for name in ("boss", "other")}
+        counted, release, entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        locks = 0
+
+        async def lock(session):
+            nonlocal locks
+            locks += 1
+            if locks == 2:
+                entered.set()
+            await original_lock(session)
+
+        async def count(session):
+            answer = await original_count(session)
+            if not counted.is_set():
+                counted.set()
+                await release.wait()
+            return answer
+
+        monkeypatch.setattr(accounts, "lock_roster", lock)
+        monkeypatch.setattr(accounts, "admins", count)
+
+        async def change(name, operation):
+            async with library(cookies[name]) as client:
+                target = ("other" if name == "boss" else "boss") if operation == "remove" else name
+                path = f"/api/auth/people/{target}"
+                if operation == "remove":
+                    return await client.delete(path)
+                value = "user" if operation == "role" else True
+                return await client.patch(path, json={operation: value})
+
+        one = asyncio.create_task(change("boss", first))
+        await asyncio.wait_for(counted.wait(), 5)
+        two = asyncio.create_task(change("other", second))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+        finally:
+            release.set()
+        answers = await asyncio.wait_for(asyncio.gather(one, two), 5)
+        assert answers[0].status_code == 200
+        assert answers[1].status_code in (200, 403, 409)
+        async with db.SessionLocal() as session:
+            assert await original_count(session) >= 1
+
+    run(scenario())
 
 
 @pytest.mark.parametrize("path", ["/api/auth/logout", "/api/auth/login"])
