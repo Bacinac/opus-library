@@ -51,15 +51,27 @@ def test_a_bare_srt_is_read_for_its_language(release):
     assert probe.sidecar(release, named(release, "Show.S01E05.1080p.srt", text))["lang"] == "en"
 
 
-def test_a_download_takes_every_subtitle_in_its_folder_and_a_library_file_only_its_own(release):
+def test_a_download_excludes_other_episodes_while_allowing_unambiguous_generic_subtitles(release):
     named(release, "Show.S01E05.1080p.hr.srt")
     named(release, "Subs/3_Croatian.srt")
     named(release, "Show.S01E06.1080p.hr.srt")
     named(release, "Show.S01E05.1080p.hr.4.opus.vtt")
     around = {Path(s["path"]).name for s in probe.sidecar_subs(release)}
     own = {Path(s["path"]).name for s in probe.own_sidecars(release)}
-    assert around == {"Show.S01E05.1080p.hr.srt", "3_Croatian.srt", "Show.S01E06.1080p.hr.srt"}
+    assert around == {"Show.S01E05.1080p.hr.srt", "3_Croatian.srt"}
     assert own == {"Show.S01E05.1080p.hr.srt"}
+
+
+def test_a_season_pack_assigns_only_identified_episode_subtitles(release):
+    named(release, "Show.S01E06.1080p.mkv")
+    for name in ("Show.S01E05.hr.srt", "Other.Release.S01E05.en.srt",
+                 "Show.S02E05.hr.srt", "Show.S01E06.hr.srt", "Subs/2_English.srt",
+                 "Subs/Show.S01E05/3_Croatian.srt"):
+        named(release, name)
+    selected = {Path(sub["path"]).relative_to(release.parent).as_posix()
+                for sub in probe.sidecar_subs(release)}
+    assert selected == {"Show.S01E05.hr.srt", "Other.Release.S01E05.en.srt",
+                        "Subs/Show.S01E05/3_Croatian.srt"}
 
 
 @pytest.mark.parametrize(("rate", "number"), [

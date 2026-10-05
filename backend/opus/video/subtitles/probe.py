@@ -218,10 +218,28 @@ def _subtitle_file(path: Path) -> bool:
 
 
 def sidecar_subs(video_path: str | Path) -> list[dict]:
-    """Every subtitle in a download's folder, subfolders included: beside a
-    release the only video is this one, so everything around it is its own."""
+    """Subtitles identified with this video; generic names need a single video."""
+    from opus.video.identity import EPISODE_MARKER, episode_numbers, identify_episode
+
     video = Path(video_path)
-    return [sidecar(video, c) for c in sorted(video.parent.rglob("*")) if _subtitle_file(c)]
+    identity = identify_episode(video, video.parent)
+    single = len(find_video_files(video.parent)) == 1
+    selected = []
+    for candidate in sorted(video.parent.rglob("*")):
+        if not _subtitle_file(candidate):
+            continue
+        relative = candidate.relative_to(video.parent)
+        if candidate.name.lower().startswith(f"{video.stem.lower()}."):
+            selected.append(sidecar(video, candidate))
+        elif EPISODE_MARKER.search(str(relative)):
+            named = (identify_episode(candidate, video.parent)
+                     if EPISODE_MARKER.search(candidate.name)
+                     else episode_numbers(str(relative.parent)))
+            if identity[0] is not None and identity[1] and named == identity:
+                selected.append(sidecar(video, candidate))
+        elif single:
+            selected.append(sidecar(video, candidate))
+    return selected
 
 
 def own_sidecars(video_path: str | Path) -> list[dict]:

@@ -4,7 +4,6 @@ it probes sound and its subtitle policy is satisfied."""
 import datetime
 import logging
 from pathlib import Path
-from guessit import guessit
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
@@ -19,12 +18,21 @@ from opus.video.subtitles.policy import effective_policy, evaluate
 from opus.video.subtitles.probe import (VIDEO_EXTENSIONS, find_video_files, own_sidecars,
                                         probe_file, sidecar_subs, tail_ok)
 from opus.video.pipeline import items, naming, profiles
+from opus.video.identity import identify_episode
 
 log = logging.getLogger("opus.video.pipeline")
 
 
 class ImportFailure(Exception):
     """A completed download that could not be turned into a library file."""
+
+
+def _episode_file(videos: list[Path], root: Path, episode) -> Path:
+    for candidate in videos:
+        season, numbers = identify_episode(candidate, root)
+        if season == episode.season.number and episode.number in numbers:
+            return candidate
+    raise ImportFailure(f"download contains no file for S{episode.season.number:02d}E{episode.number:02d}")
 
 
 def _completed_dir(config: RuntimeConfig, dl: VideoDownload, directory: str) -> Path:
@@ -209,11 +217,7 @@ async def import_download(session, config: RuntimeConfig, dl: VideoDownload,
         source = videos[0]
         if dl.kind == "episode":
             episode = await items.episode_with_series(session, dl.episode_id)
-            for candidate in videos:
-                parsed = guessit(candidate.name)
-                if parsed.get("episode") == episode.number:
-                    source = candidate
-                    break
+            source = _episode_file(videos, source_dir, episode)
             dest = naming.render_episode_path(config, episode, source.suffix)
         elif dl.kind == "movie":
             movie = await session.get(Movie, dl.movie_id)

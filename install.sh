@@ -34,14 +34,11 @@ for volume in downloads music movies television video photos derivatives vault; 
 done
 mkdir -p "$ROOT/volumes/postgres"
 
-env_set OPUS_DOWNLOADS_DEVICE "$ROOT/volumes/downloads"
-env_set OPUS_MUSIC_DEVICE "$ROOT/volumes/music"
-env_set OPUS_MOVIES_DEVICE "$ROOT/volumes/movies"
-env_set OPUS_TV_DEVICE "$ROOT/volumes/television"
-env_set OPUS_VIDEO_DEVICE "$ROOT/volumes/video"
-env_set OPUS_PHOTOS_DEVICE "$ROOT/volumes/photos"
-env_set OPUS_DERIVATIVES_DEVICE "$ROOT/volumes/derivatives"
-env_set OPUS_VAULT_DEVICE "$ROOT/volumes/vault"
+for mount in DOWNLOADS:downloads MUSIC:music MOVIES:movies TV:television VIDEO:video PHOTOS:photos DERIVATIVES:derivatives VAULT:vault; do
+	key=OPUS_${mount%%:*}_DEVICE
+	value=${!key:-$(env_read "$key")}
+	env_set "$key" "${value:-$ROOT/volumes/${mount##*:}}"
+done
 opus_production
 opus_pass_through VITE_OPUS_DOWNLOADS_URL VITE_OPUS_PLAYER_URL OPUS_COOKIE_DOMAIN
 
