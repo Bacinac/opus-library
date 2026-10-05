@@ -167,7 +167,7 @@ def _people(r: dict) -> dict:
         # everywhere it appears in the world except in a list of names
         "studios": [{"id": c.get("id"), "name": c["name"],
                      "logo": _img(LOGO, c.get("logo_path"))}
-                    for c in r.get("production_companies", [])][:3],
+                    for c in r.get("production_companies", [])],
         "directors": directors,
         "cast": cast,
     }

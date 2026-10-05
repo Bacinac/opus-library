@@ -6,7 +6,7 @@ import pytest
 
 from opus.api.routers.video import shared
 from opus.video import credits, library_scan
-from opus.video.metadata import awards
+from opus.video.metadata import awards, tmdb
 
 
 def chapter(title, start):
@@ -191,3 +191,9 @@ def test_an_overview_falls_back_to_english_rather_than_nothing():
     assert shared.overview_in(film, "hr") == "Hrvatski."
     assert shared.overview_in(untranslated, "hr") == "English."
     assert shared.overview_in(film, "en") == "English."
+
+
+def test_every_studio_behind_a_title_is_kept():
+    companies = [{"id": n, "name": f"Studio {n}", "logo_path": None} for n in range(1, 7)]
+    kept = tmdb._people({"production_companies": companies})["studios"]
+    assert [s["id"] for s in kept] == [1, 2, 3, 4, 5, 6]
