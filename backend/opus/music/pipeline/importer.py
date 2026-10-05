@@ -3,7 +3,6 @@ after it."""
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -227,7 +226,7 @@ async def _after_import(arrival: Arrival, plan, imported: dict[int, str], remain
 
     if arrival.config.bool("cleanup_after_import"):
         await _cleanup_downloader(download_id, arrival.channel_name, arrival.job_ref,
-                                  arrival.source_dir, arrival.config)
+                                  arrival.config)
     state.live.pop(download_id, None)
     # a box set delivers this album and leaves its other albums where they are:
     # unclaimed files are the post's business, not a shortfall of the import
@@ -246,17 +245,7 @@ async def _after_import(arrival: Arrival, plan, imported: dict[int, str], remain
 
 
 async def _cleanup_downloader(download_id: int, channel_name: str, job_ref: dict,
-                              source_dir: Path, config):
-    try:
-        root = Path(config.get("opus_landing_dir")).resolve()
-        resolved = source_dir.resolve()
-        # the guard stays whatever reports the path: the landing root holds every
-        # other job's files, so it is never the thing being removed
-        if resolved != root and root in resolved.parents:
-            await asyncio.to_thread(shutil.rmtree, resolved)
-    except Exception:
-        log.exception("landing zone cleanup failed for download %s", download_id)
-
+                              config):
     channels = {c.name: c for c in enabled_channels(config)}
     channel = channels.get(channel_name)
     if channel is None:

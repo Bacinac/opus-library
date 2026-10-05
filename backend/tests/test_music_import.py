@@ -78,8 +78,8 @@ class Import:
     async def _no_url(self, *args):
         return None
 
-    async def _cleanup(self, download_id, channel, job_ref, source_dir, config):
-        self.said.append(("cleanup", download_id, source_dir.name))
+    async def _cleanup(self, download_id, channel, job_ref, config):
+        self.said.append(("cleanup", download_id, Path(job_ref["directory"]).name))
 
     def _grab(self, release_id, mode="full"):
         self.said.append(("grab", release_id, mode))

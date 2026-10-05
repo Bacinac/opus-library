@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from sqlalchemy import delete, insert, select, text, update
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 from opus.db import SessionLocal
 from opus.models import FileImport
@@ -56,12 +58,14 @@ class Transaction:
         self.id = secrets.token_hex(16)
         self.entries = {}
         self.connection = None
+        self.connection_engine = None
         self.published = False
         self.locked = set()
 
     async def hold(self, key: str) -> None:
         if self.connection is None:
-            self.connection = await SessionLocal.kw["bind"].connect()
+            self.connection_engine = create_async_engine(SessionLocal.kw["bind"].url, poolclass=NullPool)
+            self.connection = await self.connection_engine.connect()
         if key not in self.locked:
             await self.connection.execute(
                 text("SELECT pg_advisory_lock(hashtext(:path))"), {"path": key})
@@ -185,6 +189,8 @@ class Transaction:
                 finally:
                     await self.connection.close()
                 self.connection = None
+                await self.connection_engine.dispose()
+                self.connection_engine = None
 
     def _verify(self) -> None:
         for entry in self.entries.values():
@@ -248,7 +254,6 @@ async def recover() -> None:
             files.id = row.id
             files.entries = {entry["dest"]: entry for entry in row.entries}
             files.published = True
-            files.connection = await SessionLocal.kw["bind"].connect()
             await files._lock()
             committed = await files.resolve()
             log.info("recovered import %s (%s)", row.id,
