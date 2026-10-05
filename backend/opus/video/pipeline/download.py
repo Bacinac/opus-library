@@ -6,7 +6,7 @@ import logging
 
 from sqlalchemy import select
 
-from opus import acquire
+from opus import acquire, importing
 from opus.acquire import AcquireError
 from opus.video.metadata.webvideo import probe_url
 from opus.config import settings
@@ -65,7 +65,7 @@ async def _run_import(session, config: RuntimeConfig, dl: VideoDownload) -> None
     download_id, channel, job_ref = dl.id, dl.channel, dl.job_ref
     try:
         await importer.import_download(session, config, dl, dl.job_ref.get("landing") or "")
-        await session.commit()
+        await importing.commit(session)
     except importer.ImportFailure as exc:
         detail = str(exc)
     except ProbeError as exc:
@@ -73,6 +73,9 @@ async def _run_import(session, config: RuntimeConfig, dl: VideoDownload) -> None
     except Exception as exc:
         log.exception("import failed for download %s", download_id)
         detail = f"import failed: {exc}"
+    except BaseException:
+        await importing.rollback(session)
+        raise
     else:
         if config.bool("cleanup_after_import"):
             try:
@@ -80,7 +83,7 @@ async def _run_import(session, config: RuntimeConfig, dl: VideoDownload) -> None
             except AcquireError as exc:
                 log.warning("post-import cleanup failed for download %s: %s", download_id, exc)
         return
-    await session.rollback()
+    await importing.rollback(session)
     dl = await session.get(VideoDownload, download_id)
     dl.state = "failed"
     dl.detail = detail

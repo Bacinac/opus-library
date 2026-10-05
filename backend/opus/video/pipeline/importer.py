@@ -1,16 +1,15 @@
 """The acceptance test: a finished download becomes a library file only when
 it probes sound and its subtitle policy is satisfied."""
 
-import asyncio
 import datetime
 import logging
-import shutil
 from pathlib import Path
 from guessit import guessit
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
+from opus import importing
 from opus.acquire import AcquireError
 from opus.config import settings
 from opus.models import VideoDownload, VideoFile, Movie, Subtitle, WebVideo
@@ -48,24 +47,6 @@ def _completed_dir(config: RuntimeConfig, dl: VideoDownload, directory: str) -> 
     return Path(config.get("opus_landing_dir")) / relative
 
 
-def _move_into_place(source: Path, dest: Path) -> None:
-    """Copy to a neighbour, then swap it in.
-
-    A move across a mount is a copy, and a copy that is interrupted leaves a
-    torn file sitting at the library path under the name of a whole one —
-    indistinguishable from the real thing until somebody plays the last ten
-    minutes. The rename at the end is the only step anything else can observe,
-    and a rename cannot be observed half done."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    staged = dest.with_name(dest.name + ".part")
-    staged.unlink(missing_ok=True)
-    try:
-        shutil.move(str(source), str(staged))
-        staged.replace(dest)
-    finally:
-        staged.unlink(missing_ok=True)
-
-
 def _sidecar_names(dest: Path, sidecars: list[dict]) -> list[Path]:
     """Where each sidecar goes beside its video: `<stem>.<lang>.<format>`, with a
     number before the language for a second one of the same language, so no
@@ -89,23 +70,20 @@ def _sidecar_names(dest: Path, sidecars: list[dict]) -> list[Path]:
 
 async def _persist_file(session, dl: VideoDownload, config: RuntimeConfig,
                         source: Path, dest: Path) -> VideoFile:
-    """Probe, move into the library (with subtitle sidecars) and persist the
-    files-first rows. Returns the VideoFile with subtitles loaded."""
+    """Prepare validated video and subtitles before changing library files."""
+    root = config.get({"movie": "movies_dir", "episode": "tv_dir", "web_video": "video_dir"}[dl.kind])
+    files = importing.transaction(session, Path(root))
+    await files.hold(f"opus:video-import:{dl.kind}:{dl.movie_id or dl.episode_id or dl.web_video_id}")
+    await files.hold(str(dest.absolute()))
     if source == dest:
         sidecars = own_sidecars(dest)
     else:
         sidecars = sidecar_subs(source)
-        # off the event loop: this is a five-gigabyte copy, and running it here
-        # stops the API, the poll loops and every other request for its whole
-        # duration — four minutes of the module answering nothing
-        await asyncio.to_thread(_move_into_place, source, dest)
-    info = await probe_file(dest)
+    staged = await importing.run(files.copy, source, dest)
+    info = await probe_file(staged)
+    if not await tail_ok(staged):
+        raise ImportFailure(f"video does not decode to its declared end: {source}")
 
-    # A path already on record means this exact file was fetched before — a
-    # re-download of something the library already holds. The file on disk is
-    # the new one, so the row describes the new one; inserting a second row for
-    # the same path fails on the unique index and strands the download at
-    # `downloaded` forever.
     existing = await session.execute(select(VideoFile).where(VideoFile.path == str(dest)))
     media = existing.scalar_one_or_none()
     superseded: set[str] = set()
@@ -116,7 +94,7 @@ async def _persist_file(session, dl: VideoDownload, config: RuntimeConfig,
         superseded = {p for sub in await _subtitles_for_file(session, media.id)
                       for p in (sub.path, sub.vtt_path) if p}
         await session.execute(delete(Subtitle).where(Subtitle.file_id == media.id))
-    media.size = dest.stat().st_size
+    media.size = staged.stat().st_size
     media.container = info["container"]
     media.video_codec = info["video_codec"]
     media.width = info["width"]
@@ -141,7 +119,12 @@ async def _persist_file(session, dl: VideoDownload, config: RuntimeConfig,
         if (s["codec"] or "").lower() in extract.TEXT_CODECS
         and (not config.langs() or s["lang"] in config.langs())
     ]
-    written = await extract.extract(dest, wanted) if wanted else {}
+    written = await extract.extract(staged, wanted) if wanted else {}
+    for position, path in list(written.items()):
+        if path:
+            sub_dest = extract.vtt_for(dest, info["subtitle_streams"][position]["lang"], position)
+            await importing.run(files.adopt, Path(path), sub_dest)
+            written[position] = str(sub_dest)
     for i, stream in enumerate(info["subtitle_streams"]):
         session.add(Subtitle(file_id=media.id, lang=stream["lang"], source="embedded",
                              format=stream["codec"], forced=stream["forced"],
@@ -149,8 +132,7 @@ async def _persist_file(session, dl: VideoDownload, config: RuntimeConfig,
                              hollow=i in written and written[i] is None))
     for sub, sub_dest in zip(sidecars, _sidecar_names(dest, sidecars)):
         sub_source = Path(sub["path"])
-        if sub_source != sub_dest:
-            shutil.move(str(sub_source), str(sub_dest))
+        await importing.run(files.copy, sub_source, sub_dest)
         auto = ".auto." in sub_source.name.lower()
         session.add(Subtitle(file_id=media.id, lang=sub["lang"], source="external",
                              format=sub["format"], forced=sub["forced"], auto_generated=auto,
@@ -160,7 +142,7 @@ async def _persist_file(session, dl: VideoDownload, config: RuntimeConfig,
     # under numbered names, and nothing refers to them once their rows are gone
     for stale in superseded - {p for sub in await _subtitles_for_file(session, media.id)
                                for p in (sub.path, sub.vtt_path) if p}:
-        await asyncio.to_thread(Path(stale).unlink, missing_ok=True)
+        files.retire(Path(stale))
     return media
 
 
@@ -243,7 +225,19 @@ async def import_download(session, config: RuntimeConfig, dl: VideoDownload,
     media = await _persist_file(session, dl, config, source, dest)
     if dl.kind in ("episode", "movie"):
         await _retire_replaced(session, media)
-    await _finalize_policy(session, config, dl, media)
+    files = importing.transaction(session)
+    staged = Path(files.entries[str(dest.absolute())]["new"])
+    media.path = str(staged)
+    try:
+        await _finalize_policy(session, config, dl, media)
+        for sub in await _subtitles_for_file(session, media.id):
+            if sub.path and Path(sub.path).parent == staged.parent:
+                final = dest.with_name(Path(sub.path).name)
+                await importing.run(files.adopt, Path(sub.path), final)
+                sub.path = str(final)
+    finally:
+        media.path = str(dest)
+    await files.publish()
 
 
 async def _retire_replaced(session, media: VideoFile) -> None:
@@ -265,7 +259,7 @@ async def _retire_replaced(session, media: VideoFile) -> None:
         paths = [file.path] + [p for sub in file.subtitles for p in (sub.path, sub.vtt_path) if p]
         for path in paths:
             if path not in kept:
-                await asyncio.to_thread(Path(path).unlink, missing_ok=True)
+                importing.transaction(session).retire(Path(path))
         log.info("replaced %s with %s", file.path, media.path)
         await session.delete(file)
     await session.flush()

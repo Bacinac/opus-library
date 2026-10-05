@@ -16,6 +16,7 @@ from opus.models import (Artist, MusicDownload, MusicDownloadStatus, MusicFile, 
                          ReleaseStatus, Setting, Track)
 from opus.music.metadata import artwork
 from opus.music.pipeline import grab, importer, judge, state
+from opus.music.tagging import tagger
 
 TITLES = ["Morning", "Noon", "Night"]
 
@@ -140,6 +141,46 @@ class Import:
 @pytest.fixture
 def importing(tmp_path, monkeypatch, clean):
     return Import(tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("failure", ["late_tag", "commit"])
+def test_a_failed_album_replacement_preserves_the_whole_old_album_and_input(importing, monkeypatch, failure):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    download_id, release_id, _ = run(importing.setup())
+    for n, title in enumerate(TITLES, 1):
+        flac(importing.job() / f"{n:02d} {title}.flac", title, n)
+    run(importer._import_locked(download_id))
+    before = {p: p.read_bytes() for p in importing.music.rglob("*.flac")}
+    inputs = {p: p.read_bytes() for p in importing.job().rglob("*.flac")}
+    catalogue = run(importing.outcome(download_id, release_id))["files"]
+    if failure == "late_tag":
+        original = tagger._write_tags
+        count = 0
+
+        def write(*args):
+            nonlocal count
+            count += 1
+            if count == 2:
+                raise OSError("second track cannot be tagged")
+            return original(*args)
+
+        monkeypatch.setattr(tagger, "_write_tags", write)
+    else:
+        original = AsyncSession.commit
+
+        async def commit(session):
+            if "file_import" in session.info:
+                raise OSError("catalogue commit failed")
+            await original(session)
+
+        monkeypatch.setattr(AsyncSession, "commit", commit)
+    run(importer.import_download(download_id))
+    assert {p: p.read_bytes() for p in before} == before
+    assert {p: p.read_bytes() for p in inputs} == inputs
+    outcome = run(importing.outcome(download_id, release_id))
+    assert outcome["files"] == catalogue
+    assert outcome["download"][0] is MusicDownloadStatus.FAILED
 
 
 def test_a_whole_album_is_filed(importing):

@@ -22,7 +22,7 @@ seen_paths: set[str] = set()
 def collect_album_dirs(root: Path) -> dict[Path, list[Path]]:
     dirs: dict[Path, list[Path]] = {}
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
+        if ".opus-imports" not in path.parts and path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
             dirs.setdefault(path.parent, []).append(path)
     return {d: sorted(files) for d, files in sorted(dirs.items())}
 

@@ -7,6 +7,7 @@ nothing in one has any business referring to the other."""
 
 from opus.models.accounts import Device, Passkey, User
 from opus.models.base import Base, LoopPass, Setting
+from opus.models.imports import FileImport
 from opus.models.music import (
     ARTIST_CATALOG_IDS,
     DEAD_SOURCE,
@@ -85,7 +86,7 @@ __all__ = [
     "FaceCluster",
     "Person",
 
-    "Base", "LoopPass", "Setting",
+    "Base", "LoopPass", "Setting", "FileImport",
     # music
     "Artist", "ArtistExternalId", "ArtistRelation", "ChannelName",
     "DiscogsMastersCache", "EnrichStatus", "FolderScanCache", "Image",

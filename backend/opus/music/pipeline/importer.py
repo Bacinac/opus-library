@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from opus import importing
 from opus.music.channels import enabled_channels
 from opus.db import SessionLocal
 from opus.music.metadata import artwork
@@ -89,7 +90,8 @@ async def _file_import(arrival: Arrival, plan, adopted_edition, cover_bytes: byt
     """Move the files into the library and write down what arrived. None when the
     download stopped wanting this import or the move failed."""
     download_id = arrival.download_id
-    async with SessionLocal() as session:
+    async with SessionLocal() as session, importing.managed(session, Path(arrival.music_dir)) as files:
+        await files.hold(f"opus:music-import:{arrival.release_id}")
         download = await session.get(MusicDownload, download_id)
         if download is None or download.status is not MusicDownloadStatus.IMPORTING:
             # cancelled or deleted while the edition checks were running; the
@@ -109,23 +111,19 @@ async def _file_import(arrival: Arrival, plan, adopted_edition, cover_bytes: byt
             if first is not None else {}
         )
         edition = tagger.edition_of(arrived.get("channels"), arrived.get("codec"))
-        try:
-            imported = await asyncio.to_thread(
-                tagger.apply_import,
-                plan, arrival.artist_name, arrival.album_title, arrival.release_date,
-                arrival.track_refs, arrival.music_dir, arrival.config.get("music_naming"),
-                cover_bytes, cover_mime, edition,
-            )
-        except tagger.ImportError_ as exc:
-            download.status = MusicDownloadStatus.FAILED
-            download.error = str(exc)
-            release.status = ReleaseStatus.FAILED
-            await session.commit()
-            state.live.pop(download_id, None)
-            log.error("import failed for download %s: %s", download_id, exc)
+        imported = await importing.run(
+            tagger.prepare_import,
+            plan, files, arrival.artist_name, arrival.album_title, arrival.release_date,
+            arrival.track_refs, arrival.music_dir, arrival.config.get("music_naming"),
+            cover_bytes, cover_mime, edition,
+        )
+        download = (await session.execute(select(MusicDownload).where(
+            MusicDownload.id == download_id).with_for_update()
+            .execution_options(populate_existing=True))).scalar_one_or_none()
+        if download is None or download.status is not MusicDownloadStatus.IMPORTING:
             return None
-
-        await _record_files(session, download_id, release.id, imported)
+        await files._lock()
+        await _record_files(session, files, download_id, release.id, imported)
         download.status = MusicDownloadStatus.COMPLETE
         # complete only when no track is left without a file (a missing-only
         # grab may have filled just part of the gap)
@@ -136,7 +134,7 @@ async def _file_import(arrival: Arrival, plan, adopted_edition, cover_bytes: byt
         )).scalar()
         release.status = (ReleaseStatus.COMPLETE if remaining == 0
                           else ReleaseStatus.NONE)
-        await session.commit()
+        await importing.commit(session)
     return plan, imported, remaining
 
 
@@ -176,11 +174,11 @@ async def _adopt_edition(session, release: Release, arrival: Arrival, plan, adop
     return plan
 
 
-async def _record_files(session, download_id: int, release_id: int,
+async def _record_files(session, files, download_id: int, release_id: int,
                         imported: dict[int, str]) -> None:
     layouts: dict[int, str] = {}
     for track_id, path in imported.items():
-        info = await asyncio.to_thread(tagger.probe_file, Path(path))
+        info = await asyncio.to_thread(tagger.probe_file, Path(files.entries[path]["new"]))
         layouts[track_id] = tagger.edition_of(info.get("channels"), info.get("codec"))
         await session.execute(
             pg_insert(MusicFile)
@@ -208,13 +206,7 @@ async def _record_files(session, download_id: int, release_id: int,
         if tagger.edition_of(old.channels, old.codec) == layouts.get(old.track_id, "")
     ]
     for old in superseded:
-        try:
-            old_path = Path(old.path)
-            if old_path.exists():
-                await asyncio.to_thread(old_path.unlink)
-        except OSError as exc:
-            log.error("failed to remove superseded file %s: %s", old.path, exc)
-            continue
+        files.retire(Path(old.path))
         await session.delete(old)
     if superseded:
         log.info("removed %d superseded files for release %s",

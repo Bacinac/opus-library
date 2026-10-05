@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,10 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from conftest import library, run, signed_in
-from opus import acquire, db
+from opus import acquire, db, importing
 from opus.acquire import AcquireError, JobStatus
 from opus.models import Episode, Movie, Season, Series, Setting, Subtitle, VideoDownload, VideoFile
-from opus.settings_store import current_runtime
+from opus.settings_store import RuntimeConfig, current_runtime
 from opus.video.metadata import tmdb
 from opus.video.pipeline import download, grab, importer, monitor, search
 from opus.video.channels.base import Candidate
@@ -397,14 +398,20 @@ def test_sidecars_that_would_share_a_name_are_all_kept(clean, tmp_path, monkeypa
 
     monkeypatch.setattr(importer, "probe_file", probe)
 
+    async def intact(path):
+        return True
+
+    monkeypatch.setattr(importer, "tail_ok", intact)
+
     async def scenario():
         movie_id = await _film()
         download_id = await _download(movie_id)
         async with db.SessionLocal() as session:
             config = await current_runtime()
+            config = RuntimeConfig({**config.values, "movies_dir": str(tmp_path / "movies")})
             dl = await session.get(VideoDownload, download_id)
             media = await importer._persist_file(session, dl, config, source, dest)
-            await session.commit()
+            await importing.commit(session)
             return (await session.execute(
                 select(Subtitle.lang, Subtitle.path).where(Subtitle.file_id == media.id))).all()
 
@@ -414,6 +421,86 @@ def test_sidecars_that_would_share_a_name_are_all_kept(clean, tmp_path, monkeypa
     assert sorted(Path(path).read_bytes() for path in paths) == sorted(sidecars.values())
     assert sorted(lang for lang, _ in rows) == ["en", "en", "en", "en"]
     assert all(path.startswith(str(dest.parent / "Film (2020).")) for path in paths)
+
+
+@pytest.mark.parametrize("failure", ["probe", "tail", "commit"])
+def test_a_rejected_video_replacement_preserves_old_bytes_and_catalogue(clean, tmp_path, monkeypatch, failure):
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from opus.video.subtitles.probe import ProbeError
+
+    source = tmp_path / "landing" / "grab" / "Film.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"new video")
+    dest = tmp_path / "movies" / "Film (2020)" / "Film (2020).mkv"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"old video")
+
+    async def probe(path):
+        if failure == "probe":
+            raise ProbeError("invalid container")
+        return {"container": "matroska", "video_codec": "h264", "width": 1920,
+                "height": 1080, "audio_langs": [], "duration_s": 6000,
+                "subtitle_streams": []}
+
+    async def intact(path):
+        return failure != "tail"
+
+    async def next_release(*args):
+        pass
+
+    monkeypatch.setattr(importer, "probe_file", probe)
+    monkeypatch.setattr(importer, "tail_ok", intact)
+    monkeypatch.setattr(grab, "try_next_release", next_release)
+    original = AsyncSession.commit
+
+    async def commit(session):
+        if failure == "commit" and "file_import" in session.info:
+            raise OSError("catalogue commit failed")
+        await original(session)
+
+    monkeypatch.setattr(AsyncSession, "commit", commit)
+
+    async def scenario():
+        movie_id = await _film()
+        async with db.SessionLocal() as session:
+            old = VideoFile(path=str(dest), movie_id=movie_id, release_guid="old", size=9)
+            session.add(old)
+            await session.commit()
+        download_id = await _download(movie_id, job_ref={"landing": "/landing/grab"})
+        config = RuntimeConfig({"opus_landing_root": "/landing", "opus_landing_dir": str(source.parent.parent),
+                                "movies_dir": str(tmp_path / "movies"), "subtitle_mode": "none"})
+        async with db.SessionLocal() as session:
+            dl = await session.get(VideoDownload, download_id)
+            await download._run_import(session, config, dl)
+            media = (await session.execute(select(VideoFile))).scalar_one()
+            return media.release_guid, media.size, (await session.get(VideoDownload, download_id)).state
+
+    assert run(scenario()) == ("old", 9, "failed")
+    assert dest.read_bytes() == b"old video"
+    assert source.read_bytes() == b"new video"
+
+
+def test_a_real_video_is_validated_and_committed_without_consuming_its_source(clean, tmp_path):
+    source = tmp_path / "landing" / "grab" / "Film.mkv"
+    source.parent.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "color=c=blue:s=32x32:r=10:d=3", "-c:v", "libx264", str(source)], check=True)
+    content = source.read_bytes()
+    dest = tmp_path / "movies" / "Film (2020)" / "Film (2020).mkv"
+    config = RuntimeConfig({"movies_dir": str(tmp_path / "movies")})
+
+    async def scenario():
+        movie_id = await _film()
+        download_id = await _download(movie_id)
+        async with db.SessionLocal() as session:
+            dl = await session.get(VideoDownload, download_id)
+            media = await importer._persist_file(session, dl, config, source, dest)
+            await importing.commit(session)
+            return media.video_codec, media.width, media.size
+
+    assert run(scenario()) == ("h264", 32, len(content))
+    assert dest.read_bytes() == content
+    assert source.read_bytes() == content
 
 
 def test_sidecars_already_named_for_their_video_stay_where_they_are(tmp_path):
@@ -447,6 +534,11 @@ def test_a_replacement_retires_the_old_file_and_keeps_its_own_subtitles(clean, t
 
     monkeypatch.setattr(importer, "probe_file", probe)
 
+    async def intact(path):
+        return True
+
+    monkeypatch.setattr(importer, "tail_ok", intact)
+
     async def scenario():
         movie_id = await _film()
         async with db.SessionLocal() as session:
@@ -459,10 +551,11 @@ def test_a_replacement_retires_the_old_file_and_keeps_its_own_subtitles(clean, t
         download_id = await _download(movie_id, release_guid="guid-new")
         async with db.SessionLocal() as session:
             config = await current_runtime()
+            config = RuntimeConfig({**config.values, "movies_dir": str(tmp_path / "movies")})
             dl = await session.get(VideoDownload, download_id)
             media = await importer._persist_file(session, dl, config, source, dest)
             await importer._retire_replaced(session, media)
-            await session.commit()
+            await importing.commit(session)
             files = (await session.execute(
                 select(VideoFile.path).where(VideoFile.movie_id == movie_id))).scalars().all()
             return files, await grab.held_posts(session, movie_id=movie_id)
@@ -492,6 +585,11 @@ def test_a_copy_fetched_again_under_the_same_name_leaves_no_old_subtitles(clean,
 
     monkeypatch.setattr(importer, "probe_file", probe)
 
+    async def intact(path):
+        return True
+
+    monkeypatch.setattr(importer, "tail_ok", intact)
+
     async def scenario():
         movie_id = await _film()
         async with db.SessionLocal() as session:
@@ -504,9 +602,10 @@ def test_a_copy_fetched_again_under_the_same_name_leaves_no_old_subtitles(clean,
         download_id = await _download(movie_id)
         async with db.SessionLocal() as session:
             config = await current_runtime()
+            config = RuntimeConfig({**config.values, "movies_dir": str(tmp_path / "movies")})
             dl = await session.get(VideoDownload, download_id)
             await importer._persist_file(session, dl, config, source, dest)
-            await session.commit()
+            await importing.commit(session)
 
     run(scenario())
     assert dest.read_bytes() == b"good sound"

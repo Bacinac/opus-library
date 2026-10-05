@@ -4,7 +4,6 @@ by the naming_template setting, e.g. {artist}/{album} ({year})/{nn} - {title}.""
 
 import logging
 import re
-import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -355,14 +354,13 @@ def edition_of(channels: int | None, codec: str | None = None) -> str:
     return ""
 
 
-def apply_import(plan: ImportPlan, artist_name: str, album_title: str,
+def prepare_import(plan: ImportPlan, files, artist_name: str, album_title: str,
                  release_date: str | None, tracks: list,
                  music_dir: str, naming_template: str,
                  cover_bytes: bytes | None = None,
                  cover_mime: str = "image/jpeg",
                  edition: str = "") -> dict[int, str]:
-    """Tag the planned files and move them into the library, returning
-    {track_id: final_path}.
+    """Copy and tag every planned file before publishing any library path.
 
     An edition names a folder inside the album's own: the surround mix of a
     record is not a better copy of the stereo one and must not be written over
@@ -387,10 +385,6 @@ def apply_import(plan: ImportPlan, artist_name: str, album_title: str,
         if row_id is None:
             continue
         best_path = plan.audio_files[row_id]
-        _write_tags(best_path, artist_name, album_title, track.title,
-                    track.position, len(tracks), year)
-        if cover_bytes:
-            _embed_cover(best_path, cover_bytes, cover_mime)
         relative = render_track_path(
             naming_template, artist_name, album_title, year, track.position, track.title
         )
@@ -398,8 +392,11 @@ def apply_import(plan: ImportPlan, artist_name: str, album_title: str,
             relative = relative.parent / edition / relative.name
         # append the extension rather than with_suffix(): titles may contain dots
         dest = Path(music_dir) / relative.parent / (relative.name + best_path.suffix.lower())
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(best_path), str(dest))
+        staged = files.copy(best_path, dest)
+        _write_tags(staged, artist_name, album_title, track.title,
+                    track.position, len(tracks), year)
+        if cover_bytes:
+            _embed_cover(staged, cover_bytes, cover_mime)
         imported[track.id] = str(dest)
 
     if not imported:
@@ -410,5 +407,5 @@ def apply_import(plan: ImportPlan, artist_name: str, album_title: str,
     if cover_bytes:
         # album cover file, media-server convention (cover.jpg)
         for album_dir in {Path(p).parent for p in imported.values()}:
-            (album_dir / _image_filename("cover", cover_mime)).write_bytes(cover_bytes)
+            files.reserve(album_dir / _image_filename("cover", cover_mime)).write_bytes(cover_bytes)
     return imported

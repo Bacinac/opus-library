@@ -291,6 +291,7 @@ def find_video_files(directory: str | Path) -> list[Path]:
     files = [
         p for p in root.rglob("*")
         if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS
+        and ".opus-imports" not in p.parts
         and "sample" not in p.name.lower()
     ]
     return sorted(files, key=lambda p: p.stat().st_size, reverse=True)
