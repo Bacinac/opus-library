@@ -189,7 +189,7 @@ async def _served(work):
 
 
 # a derivative named by what it is made of, so it is cached as hard as its inputs
-CACHED = {"Cache-Control": "public, max-age=31536000, immutable"}
+CACHED = {"Cache-Control": "private, max-age=31536000, immutable"}
 
 
 @router.get("/faces/{face_id}/crop")

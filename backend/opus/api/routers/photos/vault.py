@@ -78,10 +78,11 @@ def _b64(data: bytes | None) -> str | None:
     return base64.b64encode(data).decode() if data is not None else None
 
 
-def _reserved(row: VaultFile, known: bool) -> dict:
+def _reserved(row: VaultFile, known: bool, config) -> dict:
     """Return the cryptographic material originally bound to an upload."""
     return {"id": row.id, "at": row.at, "bytes": row.size, "chunk": row.chunk,
-            "keyed": _b64(row.keyed), "meta": _b64(row.meta), "known": known}
+            "keyed": _b64(row.keyed), "meta": _b64(row.meta), "known": known,
+            "thumb": row.thumb is not None and store.thumb_at(config, row.person, row.id).is_file()}
 
 
 async def whose(request: Request, session: AsyncSession = Depends(get_session)) -> str:
@@ -244,7 +245,7 @@ async def reserve(body: Reservation, person: str = Depends(whose),
         if on_disk != known.at:
             known.at = on_disk
             await session.commit()
-        return _reserved(known, True)
+        return _reserved(known, True, config)
     row = VaultFile(
         id=secrets.token_hex(16), person=person, mark=mark, size=body.bytes,
         at=0, chunk=body.chunk, keyed=_raw(body.keyed, "keyed"),
@@ -252,7 +253,7 @@ async def reserve(body: Reservation, person: str = Depends(whose),
     )
     session.add(row)
     await session.commit()
-    return _reserved(row, False)
+    return _reserved(row, False, config)
 
 
 @router.put("/vault/{file_id}")

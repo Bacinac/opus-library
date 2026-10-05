@@ -7,6 +7,7 @@ import os
 import time
 
 import pytest
+from fastapi import HTTPException
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -140,6 +141,41 @@ def test_a_file_is_sent_piece_by_piece_and_only_in_order(vault):
     assert (peek.headers["x-vault-at"], peek.headers["x-vault-bytes"]) == (str(2 * piece), str(2 * piece))
     assert row.at == 2 * piece
     assert (root / row.person / made["id"]).stat().st_size == 2 * piece
+
+
+def test_reservations_report_missing_thumbnails_independently_of_completed_originals(vault, monkeypatch):
+    root, jana, _ = vault
+    put_thumb = store.put_thumb
+    attempted = 0
+
+    def interrupted(*args):
+        nonlocal attempted
+        attempted += 1
+        if attempted == 1:
+            raise HTTPException(503, "thumbnail unavailable")
+        return put_thumb(*args)
+
+    monkeypatch.setattr(store, "put_thumb", interrupted)
+
+    async def scenario():
+        async with library(jana) as client:
+            body = reservation(20)
+            made = (await client.post("/api/photos/vault", json=body)).json()
+            url = f"/api/photos/vault/{made['id']}"
+            assert made["thumb"] is False
+            assert (await client.put(url, params={"at": 0}, content=b"a" * 20)).status_code == 200
+            assert (await client.put(f"{url}/thumb", content=b"thumbnail")).status_code == 503
+            retry = (await client.post("/api/photos/vault", json=body)).json()
+            assert retry["known"] and retry["at"] == retry["bytes"] == 20
+            assert retry["thumb"] is False
+            assert (await client.put(f"{url}/thumb", content=b"thumbnail")).status_code == 200
+            assert (await client.post("/api/photos/vault", json=body)).json()["thumb"] is True
+            row = await _row(made["id"])
+            store.thumb_at(RuntimeConfig({"photos_vault_dir": str(root)}), row.person, row.id).unlink()
+            assert (await client.post("/api/photos/vault", json=body)).json()["thumb"] is False
+            assert (await client.get(f"{url}/bytes")).content == b"a" * 20
+
+    run(scenario())
 
 
 def test_a_piece_past_the_announced_size_is_refused(vault):

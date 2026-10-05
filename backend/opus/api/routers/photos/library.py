@@ -217,7 +217,7 @@ async def play(checksum: str, session=Depends(get_session)):
     path = await _recording(session, checksum)
     return FileResponse(
         path, media_type=PLAYS.get(path.suffix.lower(), "application/octet-stream"),
-        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @router.get("/{checksum}/playback")
@@ -254,7 +254,7 @@ async def _serve(session, checksum: str, which: int):
     path = derive.paths_for(derive.store_root(config), digest)[which]
     if path.exists():
         return FileResponse(path, media_type="image/jpeg" if which == 0 else "image/avif",
-                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
+                            headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
     photo = (await session.execute(
         select(Photo).where(Photo.checksum == digest))).scalar_one_or_none()
