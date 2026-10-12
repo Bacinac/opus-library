@@ -29,6 +29,10 @@ class Candidate:
     # worth up to a fifth of it.
     payload: int | None = None
     declared: str = ""
+    # what scoring found: how near the resolution is to the one asked for, and
+    # whether the copy itself is wrong rather than merely plainer
+    fit: float = 0.0
+    flawed: bool = False
 
 
 class Channel:

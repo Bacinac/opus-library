@@ -113,6 +113,7 @@ def _bitrate_score(config: RuntimeConfig, c: Candidate, resolution: str,
     ceiling = config.rates("bitrate_ceiling").get(resolution)
     c.parsed["_mbps"] = round(mbps, 1)
     if floor and mbps < floor:
+        c.flawed = True
         return -250 * min(1.0, (floor - mbps) / floor)
     if ceiling and mbps > ceiling:
         return -40 * min(2.0, (mbps - ceiling) / ceiling)
@@ -140,16 +141,18 @@ def score_candidate(config: RuntimeConfig, c: Candidate, *, profile: str = "",
                     runtime_s: float | None = None) -> float:
     c.parsed = dict(guessit(c.title))
     resolution = str(c.parsed.get("screen_size", ""))
-    score = 0.0
-    score += _resolution_score(resolution, profile or config.get("movie_quality_profile"))
-    score += _source_score(c.parsed)
+    c.flawed = False
+    c.fit = _resolution_score(resolution, profile or config.get("movie_quality_profile"))
+    source = _source_score(c.parsed)
+    score = c.fit + source
     score += _audio_score(c.parsed)
     score += _bitrate_score(config, c, resolution, runtime_s)
     if config.bool("prefer_hdr"):
         score += _hdr_score(c.parsed, resolution)
     if config.bool("prefer_surround"):
         score += _surround_score(c.parsed)
-    if _foreign_edition(c.parsed, ["en"] + config.langs()):
+    foreign = _foreign_edition(c.parsed, ["en"] + config.langs())
+    if foreign:
         score += FOREIGN_EDITION_PENALTY
 
     if c.declared == "unreadable":
@@ -158,10 +161,31 @@ def score_candidate(config: RuntimeConfig, c: Candidate, *, profile: str = "",
 
     if c.subs_hint or any(marker in c.title.lower() for marker in SUBS_MARKERS):
         score += 15
-    score += _seeders_score(c)
+    seeders = _seeders_score(c)
+    score += seeders
     score += _protocol_score(config.get("protocol_preference"), c.protocol)
+    c.flawed = c.flawed or source < 0 or foreign or c.declared == "unreadable" or seeders < 0
     c.score = score
     return score
+
+
+def ranked(config: RuntimeConfig, candidates: list[Candidate]) -> list[Candidate]:
+    """The order releases are taken in.
+
+    "Usenet first" (or torrent) is an order, not a weight: a sound release on
+    the preferred protocol at the best resolution on offer goes ahead of every
+    release on the other one, whatever its seeders or its finish. A weight never
+    held — fifty seeders outbid it, and a torrent of the very post sitting on
+    usenet was taken at a fraction of the speed. Below that class, and for a
+    flawed copy, the score alone decides."""
+    first = {"usenet_first": "usenet", "torrent_first": "torrent"}.get(
+        config.get("protocol_preference"))
+    best = max((c.fit for c in candidates if not c.flawed), default=None)
+
+    def promoted(c: Candidate) -> bool:
+        return c.protocol == first and not c.flawed and c.fit == best
+
+    return sorted(candidates, key=lambda c: (promoted(c), c.score), reverse=True)
 
 
 def _resolution_score(resolution: str, profile: str) -> float:

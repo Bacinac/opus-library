@@ -66,7 +66,7 @@ async def refine_candidates(config: RuntimeConfig, candidates: list[Candidate], 
             continue
         c.payload, c.declared = _payload(files)
         score.score_candidate(config, c, profile=profile, runtime_s=runtime_s)
-    return sorted(candidates, key=lambda c: c.score, reverse=True)
+    return score.ranked(config, candidates)
 
 
 def _norm_name(value: str) -> str:
@@ -155,5 +155,5 @@ async def search_candidates(config: RuntimeConfig, *, movie: Movie | None = None
     if len(kept) != len(candidates):
         log.info("search %r: %d of %d releases are of something else",
                  query, len(candidates) - len(kept), len(candidates))
-    kept.sort(key=lambda c: c.score, reverse=True)
-    return await refine_candidates(config, kept, profile=profile, runtime_s=runtime_s)
+    return await refine_candidates(config, score.ranked(config, kept),
+                                   profile=profile, runtime_s=runtime_s)
