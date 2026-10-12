@@ -148,6 +148,21 @@ def test_a_grab_says_who_asked_and_under_which_namespace(downloads):
     assert re.fullmatch(r"[0-9a-f]{32}", downloads.asked[0].headers["Idempotency-Key"])
 
 
+
+def test_a_refused_grab_says_why(downloads):
+    downloads.answers[("POST", "/api/grab")] = httpx.Response(
+        502, json={"detail": "qbittorrent: the magnet carries no infohash"})
+
+    async def scenario():
+        try:
+            with pytest.raises(acquire.AcquireError,
+                               match="502 qbittorrent: the magnet carries no infohash"):
+                await acquire.grab(CONFIG, {"id": 5}, "movies")
+        finally:
+            await acquire.close()
+
+    run(scenario())
+
 def test_search_reads_releases_and_refuses_an_engine_error(downloads):
     downloads.answers[("POST", "/api/search")] = httpx.Response(
         200, json={"releases": [{"title": "X"}], "errors": []})

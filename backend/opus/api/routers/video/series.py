@@ -308,14 +308,15 @@ async def episode_search(episode_id: int, session=Depends(get_session)):
         candidates = await search.search_candidates(config, episode=episode, session=session)
     except AcquireError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-    best = grab.next_candidate(
-        candidates, await grab.rejected_posts(session, episode_id=episode.id))
-    if best is None:
-        raise HTTPException(status_code=404, detail="no releases found")
     try:
-        dl = await grab.grab(session, config, best, episode=episode)
+        taken = await grab.take(session, config, candidates,
+                                await grab.rejected_posts(session, episode_id=episode.id),
+                                episode=episode)
     except AcquireError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if taken is None:
+        raise HTTPException(status_code=404, detail="no releases found")
+    best, dl = taken
     return {"download_id": dl.id, "release": best.title, "channel": best.channel,
             "score": best.score}
 
@@ -386,10 +387,8 @@ async def _grab_season(series_id: int, season_number: int) -> None:
                 try:
                     candidates = await search.search_candidates(
                         config, episode=e, session=session)
-                    choice = grab.next_candidate(
-                        candidates, await grab.rejected_posts(session, episode_id=e.id))
-                    if choice is not None:
-                        await grab.grab(session, config, choice, episode=e)
+                    await grab.take(session, config, candidates,
+                                    await grab.rejected_posts(session, episode_id=e.id), episode=e)
                 except AcquireError as exc:
                     log.warning("season grab: episode %s failed: %s", e.id, exc)
     finally:

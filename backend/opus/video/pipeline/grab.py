@@ -78,10 +78,27 @@ def is_taken(candidate: Candidate, rejected: set[str]) -> bool:
     return bool(candidate.guid and candidate.guid in rejected) or candidate.title in rejected
 
 
-def next_candidate(candidates: list[Candidate], rejected: set[str]) -> Candidate | None:
+async def take(session, config: RuntimeConfig, candidates: list[Candidate], rejected: set[str], *,
+               movie: Movie | None = None,
+               episode: Episode | None = None) -> tuple[Candidate, VideoDownload] | None:
+    """Hand the best release not yet taken to its channel.
+
+    A channel that refuses is passed over for the rest of the list: the same
+    release is usually indexed for usenet and torrent at once, and a refusal on
+    one is no reason to wait a whole pass before asking the other. Nothing is
+    remembered — the next pass asks the refusing channel again."""
+    refused, barred = None, set()
     for candidate in candidates:
-        if not is_taken(candidate, rejected):
-            return candidate
+        if candidate.channel in barred or is_taken(candidate, rejected):
+            continue
+        try:
+            return candidate, await grab(session, config, candidate, movie=movie, episode=episode)
+        except AcquireError as exc:
+            log.warning("%s refused %r: %s", candidate.channel, candidate.title, exc)
+            barred.add(candidate.channel)
+            refused = exc
+    if refused is not None:
+        raise refused
     return None
 
 
@@ -116,14 +133,13 @@ async def try_next_release(session, config: RuntimeConfig, dl: VideoDownload) ->
             movie = await session.get(Movie, dl.movie_id)
             candidates = await search.search_candidates(config, movie=movie, session=session)
             rejected = await rejected_posts(session, movie_id=dl.movie_id)
-        choice = next_candidate(candidates, rejected)
-        if choice is None:
+        taken = await take(session, config, candidates, rejected, movie=movie, episode=episode)
+        if taken is None:
             log.warning("download %s failed and every release for %r has now been tried",
                         dl.id, dl.release_title)
             return
-        await grab(session, config, choice, movie=movie, episode=episode)
         log.info("download %s failed on %r; grabbed %r instead",
-                 dl.id, dl.release_title, choice.title)
+                 dl.id, dl.release_title, taken[0].title)
     except AcquireError as exc:
         log.warning("could not replace failed download %s: %s", dl.id, exc)
 

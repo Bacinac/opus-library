@@ -102,12 +102,12 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
                     candidates = await search.search_candidates(
                         config, episode=await items.episode_with_series(session, e.id),
                         session=session)
-                    choice = grab.next_candidate(
-                        candidates, await grab.rejected_posts(session, episode_id=e.id))
-                    if choice is not None:
-                        await grab.grab(session, config, choice, episode=e)
+                    taken = await grab.take(
+                        session, config, candidates,
+                        await grab.rejected_posts(session, episode_id=e.id), episode=e)
+                    if taken is not None:
                         log.info("monitor: grabbed %s S%02dE%02d — %s",
-                                 series.title, season.number, e.number, choice.title)
+                                 series.title, season.number, e.number, taken[0].title)
                     elif candidates:
                         log.warning("monitor: every release for %s S%02dE%02d has already failed",
                                     series.title, season.number, e.number)
@@ -124,11 +124,11 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
             continue
         try:
             candidates = await search.search_candidates(config, movie=movie, session=session)
-            choice = grab.next_candidate(
-                candidates, await grab.rejected_posts(session, movie_id=movie.id))
-            if choice is not None:
-                await grab.grab(session, config, choice, movie=movie)
-                log.info("monitor: grabbed movie %s — %s", movie.title, choice.title)
+            taken = await grab.take(
+                session, config, candidates,
+                await grab.rejected_posts(session, movie_id=movie.id), movie=movie)
+            if taken is not None:
+                log.info("monitor: grabbed movie %s — %s", movie.title, taken[0].title)
             elif candidates:
                 log.warning("monitor: every release for movie %s has already failed", movie.title)
         except AcquireError as exc:

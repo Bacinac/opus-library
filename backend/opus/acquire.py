@@ -125,10 +125,18 @@ async def grab(config, grab_ref: dict, namespace: str, *, idempotency_key: str |
             except httpx.TransportError:
                 if attempt:
                     raise
-        resp.raise_for_status()
+        if resp.is_error:
+            raise AcquireError(f"OPUS refused the grab: {resp.status_code} {_said(resp)}")
         return resp.json()["job_id"]
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise AcquireError(f"OPUS refused the grab: {exc!r}") from exc
+
+
+def _said(resp: httpx.Response) -> str:
+    try:
+        return str(resp.json()["detail"])
+    except (ValueError, KeyError, TypeError):
+        return resp.text.strip()[:300]
 
 
 async def job_status(config, job_ref: dict) -> JobStatus:

@@ -131,14 +131,14 @@ async def movies_search(movie_id: int, session=Depends(get_session)):
         candidates = await search.search_candidates(config, movie=movie, session=session)
     except AcquireError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-    best = grab.next_candidate(
-        candidates, await grab.rejected_posts(session, movie_id=movie.id))
-    if best is None:
-        raise HTTPException(status_code=404, detail="no releases found")
     try:
-        dl = await grab.grab(session, config, best, movie=movie)
+        taken = await grab.take(session, config, candidates,
+                                await grab.rejected_posts(session, movie_id=movie.id), movie=movie)
     except AcquireError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if taken is None:
+        raise HTTPException(status_code=404, detail="no releases found")
+    best, dl = taken
     return {"download_id": dl.id, "release": best.title, "channel": best.channel,
             "score": best.score}
 

@@ -377,6 +377,48 @@ def test_nothing_is_grabbed_once_every_release_has_been_tried(releases):
     assert releases.grabbed == []
 
 
+
+def test_a_channel_that_refuses_is_passed_over_for_the_next_one(releases, monkeypatch):
+    film = run(_film())
+    failed = run(_download(film, release_title="Film.old", release_guid="guid-Film.old",
+                           state="failed"))
+    asked = []
+
+    async def acquired(config, grab_ref, namespace):
+        asked.append(grab_ref["title"])
+        if grab_ref["title"].startswith("Film.T"):
+            raise AcquireError("OPUS refused the grab: 502 no infohash")
+        return "job-u"
+
+    monkeypatch.setattr(acquire, "grab", acquired)
+    torrent = [Candidate(channel="qbittorrent", title=t, size=1, protocol="torrent",
+                         guid=f"guid-{t}", ref={"grab_ref": {"title": t}})
+               for t in ("Film.T1", "Film.T2")]
+    releases.offered.extend([torrent[0], torrent[1], release("Film.U")])
+
+    rows = replace(failed)
+    assert asked == ["Film.T1", "Film.U"]
+    assert [(title, state) for title, state, _ in rows] == [("Film.U", "queued")]
+
+
+def test_every_channel_refusing_is_said_not_swallowed(releases, monkeypatch):
+    film = run(_film())
+
+    async def refused(config, grab_ref, namespace):
+        raise AcquireError("OPUS refused the grab: 502 down")
+
+    monkeypatch.setattr(acquire, "grab", refused)
+    releases.offered.append(release("Film.A"))
+
+    async def go():
+        async with db.SessionLocal() as session:
+            movie = await session.get(Movie, film)
+            with pytest.raises(AcquireError, match="502 down"):
+                await grab.take(session, await current_runtime(), releases.offered, set(),
+                                movie=movie)
+
+    run(go())
+
 def test_sidecars_that_would_share_a_name_are_all_kept(clean, tmp_path, monkeypatch):
     release = tmp_path / "landing" / "Film.2020.1080p"
     (release / "Subs").mkdir(parents=True)
