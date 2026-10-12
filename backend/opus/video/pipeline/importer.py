@@ -11,13 +11,13 @@ from sqlalchemy.orm import selectinload
 from opus import importing
 from opus.acquire import AcquireError
 from opus.config import settings
-from opus.models import VideoDownload, VideoFile, Movie, Subtitle, WebVideo
+from opus.models import Episode, VideoDownload, VideoFile, Movie, Subtitle, WebVideo
 from opus.settings_store import RuntimeConfig
 from opus.video.subtitles import extract, fetcher, opensubtitles
 from opus.video.subtitles.policy import effective_policy, evaluate
 from opus.video.subtitles.probe import (VIDEO_EXTENSIONS, find_video_files, own_sidecars,
                                         probe_file, sidecar_subs, tail_ok)
-from opus.video.pipeline import items, naming, profiles
+from opus.video.pipeline import items, naming, profiles, score
 from opus.video.identity import identify_episode
 
 log = logging.getLogger("opus.video.pipeline")
@@ -246,10 +246,11 @@ async def import_download(session, config: RuntimeConfig, dl: VideoDownload,
 
 async def _retire_replaced(session, media: VideoFile) -> None:
     """A download that lands on an item already on the shelf is its replacement:
-    the monitor never fetches what is held, so only somebody asking for a better
-    copy brings one. The old file goes once the new one is in place, sidecars and
-    extracted subtitles with it — two copies of one episode are a shelf that
-    answers with whichever it lists first."""
+    the monitor fetches what is held only for the sharper copy passed over for a
+    quicker one, so otherwise only somebody asking for a better copy brings one.
+    The old file goes once the new one is in place, sidecars and extracted
+    subtitles with it — two copies of one episode are a shelf that answers with
+    whichever it lists first."""
     column = VideoFile.episode_id if media.episode_id else VideoFile.movie_id
     item = media.episode_id or media.movie_id
     old = (await session.execute(
@@ -266,6 +267,9 @@ async def _retire_replaced(session, media: VideoFile) -> None:
                 importing.transaction(session).retire(Path(path))
         log.info("replaced %s with %s", file.path, media.path)
         await session.delete(file)
+    held = await session.get(Episode if media.episode_id else Movie, item)
+    if held.upgrade_to and not score.sharper(held.upgrade_to, score.resolution(media.release_title)):
+        held.upgrade_to = None
     await session.flush()
 
 

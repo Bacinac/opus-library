@@ -8,6 +8,7 @@ from opus.settings_store import RuntimeConfig
 
 
 RESOLUTION_ORDER = ["2160p", "1080p", "720p", "480p"]
+FAST_ENOUGH = "1080p"
 SUBS_MARKERS = ("multi", "subs", "subbed", "dual", "multisubs", "vost")
 
 # How the picture was got, which after resolution is the largest thing a release
@@ -169,23 +170,50 @@ def score_candidate(config: RuntimeConfig, c: Candidate, *, profile: str = "",
     return score
 
 
+def resolution(title: str) -> str:
+    return str(guessit(title).get("screen_size", ""))
+
+
+def resolution_of(c: Candidate) -> str:
+    return str(c.parsed.get("screen_size", ""))
+
+
+def sharper(a: str, b: str) -> bool:
+    """Whether resolution `a` holds more picture than `b`."""
+    return a in RESOLUTION_ORDER and (
+        b not in RESOLUTION_ORDER or RESOLUTION_ORDER.index(a) < RESOLUTION_ORDER.index(b))
+
+
 def ranked(config: RuntimeConfig, candidates: list[Candidate]) -> list[Candidate]:
     """The order releases are taken in.
 
     "Usenet first" (or torrent) is an order, not a weight: a sound release on
-    the preferred protocol at the best resolution on offer goes ahead of every
-    release on the other one, whatever its seeders or its finish. A weight never
-    held — fifty seeders outbid it, and a torrent of the very post sitting on
-    usenet was taken at a fraction of the speed. Below that class, and for a
-    flawed copy, the score alone decides."""
+    the preferred protocol goes ahead of every release on the other one when it
+    is at the best resolution on offer or at 1080p or sharper, whatever the
+    other's seeders or finish. A weight never held — fifty seeders outbid it,
+    and a torrent of the very post sitting on usenet was taken at a fraction of
+    the speed. A sharper copy passed over this way is fetched afterwards (see
+    `upgrade_target`). Below that, and for a flawed copy, the score alone
+    decides."""
     first = {"usenet_first": "usenet", "torrent_first": "torrent"}.get(
         config.get("protocol_preference"))
     best = max((c.fit for c in candidates if not c.flawed), default=None)
 
     def promoted(c: Candidate) -> bool:
-        return c.protocol == first and not c.flawed and c.fit == best
+        return (c.protocol == first and not c.flawed
+                and (c.fit == best or not sharper(FAST_ENOUGH, resolution_of(c))))
 
     return sorted(candidates, key=lambda c: (promoted(c), c.score), reverse=True)
+
+
+def upgrade_target(candidates: list[Candidate], taken: Candidate) -> str | None:
+    """The resolution worth coming back for: that of the best sound release on
+    offer, when it holds more picture than the one taken."""
+    sound = [c for c in candidates if not c.flawed]
+    if not sound:
+        return None
+    best = resolution_of(max(sound, key=lambda c: (c.fit, c.score)))
+    return best if sharper(best, resolution_of(taken)) else None
 
 
 def _resolution_score(resolution: str, profile: str) -> float:

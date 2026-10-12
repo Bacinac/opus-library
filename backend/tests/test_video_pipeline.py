@@ -14,7 +14,7 @@ from opus.acquire import AcquireError, JobStatus
 from opus.models import Episode, Movie, Season, Series, Setting, Subtitle, VideoDownload, VideoFile
 from opus.settings_store import RuntimeConfig, current_runtime
 from opus.video.metadata import tmdb
-from opus.video.pipeline import download, grab, importer, monitor, search
+from opus.video.pipeline import download, grab, importer, monitor, score, search
 from opus.video.channels.base import Candidate
 from opus.video.subtitles import fetcher
 
@@ -584,13 +584,15 @@ def test_a_replacement_retires_the_old_file_and_keeps_its_own_subtitles(clean, t
     async def scenario():
         movie_id = await _film()
         async with db.SessionLocal() as session:
+            (await session.get(Movie, movie_id)).upgrade_to = "2160p"
             old = VideoFile(path=str(old_video), movie_id=movie_id, release_guid="guid-old")
             session.add(old)
             await session.flush()
             session.add(Subtitle(file_id=old.id, lang="en", source="external", format="srt",
                                  path=str(old_sub)))
             await session.commit()
-        download_id = await _download(movie_id, release_guid="guid-new")
+        download_id = await _download(movie_id, release_guid="guid-new",
+                                      release_title="Film.2020.2160p")
         async with db.SessionLocal() as session:
             config = await current_runtime()
             config = RuntimeConfig({**config.values, "movies_dir": str(tmp_path / "movies")})
@@ -600,11 +602,13 @@ def test_a_replacement_retires_the_old_file_and_keeps_its_own_subtitles(clean, t
             await importing.commit(session)
             files = (await session.execute(
                 select(VideoFile.path).where(VideoFile.movie_id == movie_id))).scalars().all()
-            return files, await grab.held_posts(session, movie_id=movie_id)
+            upgrade_to = (await session.get(Movie, movie_id)).upgrade_to
+            return files, await grab.held_posts(session, movie_id=movie_id), upgrade_to
 
-    files, held = run(scenario())
+    files, held, upgrade_to = run(scenario())
     assert files == [str(dest)]
     assert held == {"guid-new"}
+    assert upgrade_to is None
     assert not old_video.exists()
     assert dest.read_bytes() == b"good sound"
     assert old_sub.read_bytes() == b"new english"
@@ -707,6 +711,66 @@ def test_the_monitor_takes_an_episode_whose_air_date_just_arrived(releases, monk
 
     assert run(scenario()) == ["Show.S01E01.1080p"]
 
+
+
+def ranked_offer(*offers: tuple[str, str, int | None]) -> list[Candidate]:
+    config = RuntimeConfig({"protocol_preference": "usenet_first"})
+    out = []
+    for title, protocol, seeders in offers:
+        c = Candidate(channel="sabnzbd" if protocol == "usenet" else "qbittorrent", title=title,
+                      size=1, protocol=protocol, seeders=seeders, guid=f"guid-{title}",
+                      ref={"grab_ref": {"title": title}})
+        score.score_candidate(config, c, profile="2160p")
+        out.append(c)
+    return score.ranked(config, out)
+
+
+async def _monitored_film(*, held: str | None = None, upgrade_to: str | None = None) -> int:
+    async with db.SessionLocal() as session:
+        movie = Movie(tmdb_id=7, title="Film", year=2020, monitored=True, upgrade_to=upgrade_to)
+        session.add(movie)
+        await session.flush()
+        if held:
+            session.add(VideoFile(path=f"/movies/{held}.mkv", movie_id=movie.id,
+                                  release_title=held, release_guid=f"guid-{held}"))
+        await session.commit()
+        return movie.id
+
+
+def _pass_over(movie_id: int):
+    async def go():
+        async with db.SessionLocal() as session:
+            await monitor._monitor_pass(session, await current_runtime())
+        async with db.SessionLocal() as session:
+            return (await session.get(Movie, movie_id)).upgrade_to
+    return run(go())
+
+
+def test_usenet_1080p_comes_first_and_the_film_remembers_the_2160p_on_offer(releases):
+    releases.offered.extend(ranked_offer(("Film 2020 2160p WEB-DL", "torrent", 30),
+                                         ("Film.2020.1080p.WEB-DL", "usenet", None)))
+    film = run(_monitored_film())
+
+    assert _pass_over(film) == "2160p"
+    assert [ref["title"] for ref, _ in releases.grabbed] == ["Film.2020.1080p.WEB-DL"]
+
+
+def test_a_film_held_below_what_was_on_offer_is_fetched_again_sharper(releases):
+    releases.offered.extend(ranked_offer(("Film 2020 2160p WEB-DL", "torrent", 30),
+                                         ("Film.2020.1080p.WEB-DL", "usenet", None),
+                                         ("Film.2020.1080p.BluRay", "usenet", None)))
+    film = run(_monitored_film(held="Film.2020.1080p.WEB-DL", upgrade_to="2160p"))
+
+    assert _pass_over(film) == "2160p"
+    assert [ref["title"] for ref, _ in releases.grabbed] == ["Film 2020 2160p WEB-DL"]
+
+
+def test_with_no_sharper_copy_left_the_film_stops_asking(releases):
+    releases.offered.extend(ranked_offer(("Film.2020.1080p.BluRay", "usenet", None)))
+    film = run(_monitored_film(held="Film.2020.1080p.WEB-DL", upgrade_to="2160p"))
+
+    assert _pass_over(film) is None
+    assert releases.grabbed == []
 
 def test_clearing_a_failed_row_from_the_queue_leaves_its_post_dead(quick, monkeypatch):
     dead = release("Film.2020.1080p-DEAD")

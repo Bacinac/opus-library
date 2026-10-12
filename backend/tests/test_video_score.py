@@ -39,3 +39,18 @@ def test_best_score_leaves_the_order_to_the_score():
                     config=config)
     usenet = offer("The.Graham.Norton.Show.S34E01.1080p.WEB.h264-CBFM", "usenet", config=config)
     assert score.ranked(config, [usenet, torrent]) == [torrent, usenet]
+
+
+def test_usenet_at_1080p_goes_ahead_of_a_sharper_torrent_and_names_what_to_come_back_for():
+    def at(title, protocol, seeders=None):
+        c = Candidate(channel="sabnzbd" if protocol == "usenet" else "qbittorrent", title=title,
+                      size=0, protocol=protocol, seeders=seeders)
+        score.score_candidate(USENET_FIRST, c, profile="2160p")
+        return c
+
+    torrent = at("Dune 2021 2160p BluRay REMUX", "torrent", seeders=9)
+    usenet = at("Dune.2021.1080p.BluRay.x264", "usenet")
+    small = at("Dune.2021.720p.BluRay.x264", "usenet")
+    assert score.ranked(USENET_FIRST, [small, torrent, usenet])[:2] == [usenet, torrent]
+    assert score.upgrade_target([small, torrent, usenet], usenet) == "2160p"
+    assert score.upgrade_target([small, torrent, usenet], torrent) is None

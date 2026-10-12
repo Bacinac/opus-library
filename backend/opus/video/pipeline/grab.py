@@ -13,7 +13,7 @@ from opus.video.channels.sabnzbd import SabnzbdChannel
 from opus.video.channels.ytdlp import YtdlpChannel
 from opus.models import DeadPost, VideoDownload, Episode, VideoFile, Movie, WebVideo
 from opus.settings_store import RuntimeConfig
-from opus.video.pipeline import items, search
+from opus.video.pipeline import items, score, search
 
 log = logging.getLogger("opus.video.pipeline")
 
@@ -74,6 +74,11 @@ async def held_posts(session, *, episode_id: int | None = None,
     return {guid or title for guid, title in result if guid or title}
 
 
+def toward(candidates: list[Candidate], target: str) -> list[Candidate]:
+    """What an upgrade may take: nothing with less picture than it is for."""
+    return [c for c in candidates if not score.sharper(target, score.resolution_of(c))]
+
+
 def is_taken(candidate: Candidate, rejected: set[str]) -> bool:
     return bool(candidate.guid and candidate.guid in rejected) or candidate.title in rejected
 
@@ -86,17 +91,26 @@ async def take(session, config: RuntimeConfig, candidates: list[Candidate], reje
     A channel that refuses is passed over for the rest of the list: the same
     release is usually indexed for usenet and torrent at once, and a refusal on
     one is no reason to wait a whole pass before asking the other. Nothing is
-    remembered — the next pass asks the refusing channel again."""
+    remembered — the next pass asks the refusing channel again.
+
+    A release taken while a sharper one was on offer leaves the item asking for
+    that resolution: the monitor comes back for it once the first copy is in."""
     refused, barred = None, set()
     for candidate in candidates:
         if candidate.channel in barred or is_taken(candidate, rejected):
             continue
         try:
-            return candidate, await grab(session, config, candidate, movie=movie, episode=episode)
+            dl = await grab(session, config, candidate, movie=movie, episode=episode)
         except AcquireError as exc:
             log.warning("%s refused %r: %s", candidate.channel, candidate.title, exc)
             barred.add(candidate.channel)
             refused = exc
+            continue
+        target = score.upgrade_target(candidates, candidate)
+        if target:
+            (movie or episode).upgrade_to = target
+            await session.commit()
+        return candidate, dl
     if refused is not None:
         raise refused
     return None
@@ -133,6 +147,9 @@ async def try_next_release(session, config: RuntimeConfig, dl: VideoDownload) ->
             movie = await session.get(Movie, dl.movie_id)
             candidates = await search.search_candidates(config, movie=movie, session=session)
             rejected = await rejected_posts(session, movie_id=dl.movie_id)
+        upgrade_to = (movie or episode).upgrade_to
+        if upgrade_to and await held_posts(session, **item):
+            candidates = toward(candidates, upgrade_to)
         taken = await take(session, config, candidates, rejected, movie=movie, episode=episode)
         if taken is None:
             log.warning("download %s failed and every release for %r has now been tried",

@@ -94,7 +94,7 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
             if not season.monitored:
                 continue
             for e in season.episodes:
-                if not items.wanted(e) or e.files or e.id in active_ep:
+                if not items.wanted(e) or e.id in active_ep or (e.files and not e.upgrade_to):
                     continue
                 if not e.air_date or e.air_date > today:
                     continue
@@ -102,6 +102,9 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
                     candidates = await search.search_candidates(
                         config, episode=await items.episode_with_series(session, e.id),
                         session=session)
+                    if e.files:
+                        await _upgrade(session, config, candidates, episode=e)
+                        continue
                     taken = await grab.take(
                         session, config, candidates,
                         await grab.rejected_posts(session, episode_id=e.id), episode=e)
@@ -120,10 +123,13 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
         select(Movie).where(Movie.monitored.is_(True)).options(selectinload(Movie.files)))
     active_m = await items.active_ids(session, VideoDownload.movie_id)
     for movie in result.scalars():
-        if movie.files or movie.id in active_m:
+        if movie.id in active_m or (movie.files and not movie.upgrade_to):
             continue
         try:
             candidates = await search.search_candidates(config, movie=movie, session=session)
+            if movie.files:
+                await _upgrade(session, config, candidates, movie=movie)
+                continue
             taken = await grab.take(
                 session, config, candidates,
                 await grab.rejected_posts(session, movie_id=movie.id), movie=movie)
@@ -133,6 +139,26 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
                 log.warning("monitor: every release for movie %s has already failed", movie.title)
         except AcquireError as exc:
             log.warning("monitor: movie %s grab failed: %s", movie.id, exc)
+
+
+async def _upgrade(session, config: RuntimeConfig, candidates, *,
+                   movie: Movie | None = None, episode: Episode | None = None) -> None:
+    """Fetch the sharper copy that was passed over for a quicker one. Once
+    none is left to take, the item keeps what it holds and stops asking."""
+    item = movie or episode
+    rejected = await grab.rejected_posts(
+        session, movie_id=movie.id if movie else None, episode_id=episode.id if episode else None)
+    taken = await grab.take(session, config, grab.toward(candidates, item.upgrade_to), rejected,
+                            movie=movie, episode=episode)
+    kind = "movie" if movie else "episode"
+    if taken is not None:
+        log.info("monitor: upgrading %s %s to %s — %s", kind, item.id, item.upgrade_to,
+                 taken[0].title)
+        return
+    log.info("monitor: no %s copy of %s %s left to take; keeping what is held",
+             item.upgrade_to, kind, item.id)
+    item.upgrade_to = None
+    await session.commit()
 
 
 async def monitor_loop():

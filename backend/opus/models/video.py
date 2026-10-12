@@ -51,6 +51,8 @@ class Movie(Base):
     # subtitle policy override, e.g. "all:en,hr"; empty = inherit global
     subtitle_override: Mapped[str] = mapped_column(String, default="")
     added_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # the resolution that was on offer when a lower one was taken for speed
+    upgrade_to: Mapped[str | None] = mapped_column(String)
 
     files: Mapped[list["VideoFile"]] = relationship(back_populates="movie")
 
@@ -111,6 +113,7 @@ class Episode(Base):
     still_url: Mapped[str | None] = mapped_column(String)
     runtime_min: Mapped[int | None] = mapped_column(Integer)
     monitored: Mapped[bool] = mapped_column(Boolean, default=True)
+    upgrade_to: Mapped[str | None] = mapped_column(String)
 
     season: Mapped[Season] = relationship(back_populates="episodes")
     files: Mapped[list["VideoFile"]] = relationship(back_populates="episode")
