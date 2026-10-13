@@ -4,6 +4,7 @@ group-membership relations. An artist that cannot be resolved exactly stays
 'unresolved' for manual resolution in the UI — never guessed."""
 
 import logging
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import delete, or_, select, update
@@ -15,10 +16,10 @@ from opus.music.metadata import wikidata as wd
 from opus.music.metadata import wikitext as wt
 from opus.music.metadata.musicbrainz import MusicBrainzClient, MusicBrainzError
 from opus.music.metadata.deezer import DeezerClient
-from opus.models import (ARTIST_CATALOG_IDS, Artist, ArtistExternalId, ArtistRelation, EnrichStatus,
-                         Image, Release)
+from opus.models import (ARTIST_CATALOG_IDS, Artist, ArtistAlias, ArtistExternalId,
+                         ArtistRelation, EnrichStatus, Image, Release)
 from opus import passes
-from opus.music.textnorm import album_score, latin, same_artist
+from opus.music.textnorm import album_score, artist_key, latin, same_artist
 
 log = logging.getLogger("opus.enrich")
 
@@ -215,6 +216,12 @@ async def _absorb_qid_holder(session, artist: Artist, qid: str):
             .values(artist_id=a, related_artist_id=b, relation=relation, source=source)
             .on_conflict_do_nothing()
         )
+    for alias in (await session.execute(
+            select(ArtistAlias.alias).where(ArtistAlias.artist_id == holder.id,
+                                            ArtistAlias.source == "manual"))).scalars():
+        await session.execute(
+            insert(ArtistAlias).values(artist_id=artist.id, alias=alias, source="manual")
+            .on_conflict_do_nothing())
     await session.execute(delete(ArtistExternalId)
                           .where(ArtistExternalId.artist_id == holder.id))
     await session.execute(delete(Image).where(Image.entity_type == "artist",
@@ -247,6 +254,7 @@ class _Facts:
     studio_albums: list[str] | None
     canonical_name: str | None
     deezer_backfill: int | None
+    aliases: list[str]
 
 
 async def _enrich(artist_id: int, qid: str | None, client: wd.WikidataClient,
@@ -279,6 +287,7 @@ async def _enrich(artist_id: int, qid: str | None, client: wd.WikidataClient,
         await _absorb_qid_holder(session, artist, qid)
         artist.wikidata_id = qid
         await _write_identity(session, artist, facts)
+        await _write_aliases(session, artist, facts)
         await _write_portrait_and_ids(session, artist, facts)
         await _write_relations(session, client, artist, facts)
         artist.enrich_status = EnrichStatus.RESOLVED
@@ -362,7 +371,8 @@ async def _facts(client, qid: str, deezer_id: int | None) -> _Facts:
         portrait_url=portrait_url, external_ids=external_ids,
         wikidata_deezer=wikidata_deezer, stored_verified=stored_verified,
         studio_albums=studio_albums, canonical_name=canonical_name,
-        deezer_backfill=deezer_backfill)
+        deezer_backfill=deezer_backfill,
+        aliases=[a["value"] for values in entity.get("aliases", {}).values() for a in values])
 
 
 async def _country(client, country_qids: list[str]) -> tuple[str | None, str | None]:
@@ -523,6 +533,38 @@ async def _write_identity(session, artist: Artist, facts: _Facts) -> None:
             artist.deezer_id = int(wikidata_deezer)
             if canonical_name:
                 artist.name = canonical_name
+
+
+_REGISTRY_NUMBER = re.compile(r"\d{5,}")
+
+
+def _aliases(listed: list[str], name: str) -> list[str]:
+    """The names Wikidata lists for the act that could only be this act's. A
+    surname alone ('Dylan', 'Morrison'), initials ('J. J.'), a registry number
+    ('00008955074 IPI'), a disambiguated label ('Steppenwolf (band)') and other
+    scripts are left out: each would let another act's record pass for this
+    one's."""
+    own = set(artist_key(latin(name)).split())
+    kept: dict[str, str] = {}
+    for alias in (a.strip() for a in listed):
+        key = artist_key(alias)
+        if (sum(ch.isalpha() for ch in key) < 3 or _REGISTRY_NUMBER.search(alias)
+                or "(" in alias or "[" in alias or wd.has_non_latin(alias)
+                or same_artist(alias, latin(name)) or set(key.split()) < own):
+            continue
+        kept.setdefault(key, alias)
+    return sorted(kept.values(), key=str.casefold)
+
+
+async def _write_aliases(session, artist: Artist, facts: _Facts) -> None:
+    manual = {artist_key(a) for a in (await session.execute(
+        select(ArtistAlias.alias).where(ArtistAlias.artist_id == artist.id,
+                                        ArtistAlias.source == "manual"))).scalars()}
+    await session.execute(delete(ArtistAlias).where(ArtistAlias.artist_id == artist.id,
+                                                    ArtistAlias.source == "wikidata"))
+    for alias in _aliases(facts.aliases, artist.name):
+        if artist_key(alias) not in manual:
+            session.add(ArtistAlias(artist_id=artist.id, alias=alias, source="wikidata"))
 
 
 async def _write_portrait_and_ids(session, artist: Artist, facts: _Facts) -> None:

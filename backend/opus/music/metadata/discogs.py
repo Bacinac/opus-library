@@ -9,6 +9,7 @@ import httpx
 from rapidfuzz import fuzz
 
 from opus import http
+from opus.music.metadata import listings
 from opus.music.textnorm import norm
 
 BASE_URL = "https://api.discogs.com"
@@ -128,41 +129,25 @@ class DiscogsClient:
         return out
 
     async def cached_artist_masters(self, session, artist_id: int) -> list[dict]:
-        """artist_main_masters through the persistent per-week Postgres cache —
-        the full listing walk is too expensive to repeat per process."""
-        from datetime import datetime, timedelta, timezone
+        """artist_main_masters through the weekly listing — the full listing
+        walk is too expensive to repeat per process."""
+        async def read() -> list[dict]:
+            try:
+                return await self.artist_main_masters(artist_id)
+            except DiscogsNotFound as exc:
+                log.warning("discogs has no release listing for artist %s, not asked again "
+                            "for a week: %s", artist_id, exc)
+                return []
 
-        from opus.models import DiscogsMastersCache
-
-        row = await session.get(DiscogsMastersCache, artist_id)
-        if row is not None:
-            if row.fetched_at > datetime.now(timezone.utc) - timedelta(days=7):
-                self._masters_cache[artist_id] = row.masters
-                return row.masters
-            await session.delete(row)
-            await session.flush()
-        try:
-            masters = await self.artist_main_masters(artist_id)
-        except DiscogsNotFound as exc:
-            log.warning("discogs has no release listing for artist %s, not asked again "
-                        "for a week: %s", artist_id, exc)
-            masters = []
-        session.add(DiscogsMastersCache(artist_id=artist_id, masters=masters))
-        await session.flush()
+        masters = await listings.cached(session, "discogs", artist_id, read)
+        self._masters_cache[artist_id] = masters
         return masters
 
     async def store_masters(self, session, artist_id: int, masters: list[dict]):
         """Write enriched entries (typed record_type etc.) back into the
-        persistent cache so downstream passes never repeat the work."""
-        from opus.models import DiscogsMastersCache
-
-        row = await session.get(DiscogsMastersCache, artist_id)
-        if row is None:
-            session.add(DiscogsMastersCache(artist_id=artist_id, masters=masters))
-        else:
-            row.masters = masters
+        weekly listing so downstream passes never repeat the work."""
+        await listings.store(session, "discogs", artist_id, masters)
         self._masters_cache[artist_id] = masters
-        await session.flush()
 
     async def master_details(self, master_id: int) -> dict:
         """Original year + track count — enough to type an untyped master

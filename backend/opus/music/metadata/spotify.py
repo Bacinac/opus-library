@@ -3,10 +3,15 @@ artwork source; used only when credentials are configured in Settings."""
 
 import logging
 import time
+from datetime import datetime, timezone
 
 import httpx
+from sqlalchemy.dialects.postgresql import insert
 
 from opus import http
+from opus.db import SessionLocal
+from opus.models import SourceCooldown
+from opus.music.metadata import listings
 
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 API_URL = "https://api.spotify.com/v1"
@@ -17,7 +22,8 @@ MAX_RETRY_AFTER_SECONDS = 30
 
 log = logging.getLogger("opus.spotify")
 
-_cooldown_until = 0.0
+# epoch seconds; None until this process has read it back from the database
+_cooldown_until: float | None = None
 
 
 class SpotifyError(Exception):
@@ -26,6 +32,29 @@ class SpotifyError(Exception):
 
 class SpotifyCooldown(SpotifyError):
     pass
+
+
+async def _cooldown_left() -> float:
+    global _cooldown_until
+    if _cooldown_until is None:
+        async with SessionLocal() as session:
+            row = await session.get(SourceCooldown, "spotify")
+        _cooldown_until = row.until.timestamp() if row is not None else 0.0
+    return _cooldown_until - time.time()
+
+
+async def _cool_down(wait: float) -> None:
+    global _cooldown_until
+    if await _cooldown_left() <= 0:
+        log.warning("spotify rate limit: Retry-After %.0fs, not asked again until then", wait)
+    _cooldown_until = max(_cooldown_until, time.time() + wait)
+    until = datetime.fromtimestamp(_cooldown_until, timezone.utc)
+    async with SessionLocal() as session:
+        await session.execute(
+            insert(SourceCooldown).values(source="spotify", until=until)
+            .on_conflict_do_update(index_elements=[SourceCooldown.source],
+                                   set_={"until": until}))
+        await session.commit()
 
 
 class SpotifyClient:
@@ -57,8 +86,7 @@ class SpotifyClient:
         return self._token
 
     async def _get(self, path: str, **params) -> dict:
-        global _cooldown_until
-        remaining = _cooldown_until - time.monotonic()
+        remaining = await _cooldown_left()
         if remaining > 0:
             raise SpotifyCooldown(f"in rate-limit cooldown for another {remaining:.0f}s")
         token = await self._ensure_token()
@@ -69,10 +97,7 @@ class SpotifyClient:
         if resp.status_code == 429:
             wait = http.retry_after(resp) or 0
             if wait > MAX_RETRY_AFTER_SECONDS:
-                if _cooldown_until <= time.monotonic():
-                    log.warning("spotify rate limit: Retry-After %.0fs, not asked again "
-                                "until then", wait)
-                _cooldown_until = max(_cooldown_until, time.monotonic() + wait)
+                await _cool_down(wait)
                 raise SpotifyCooldown(f"rate limited, Retry-After {wait:.0f}s — cooling down")
             raise SpotifyError(f"Spotify rate limit persists on {path}")
         if resp.status_code != 200:
@@ -129,6 +154,12 @@ class SpotifyClient:
             data = await self._get(data["next"])
         self._albums_cache[spotify_artist_id] = albums
         return albums
+
+    async def cached_artist_albums(self, session, spotify_artist_id: str) -> list[dict]:
+        """artist_albums through the weekly listing: a long career is dozens of
+        pages, and every followed artist's every pass is a day-long ban."""
+        return await listings.cached(session, "spotify", spotify_artist_id,
+                                     lambda: self.artist_albums(spotify_artist_id))
 
     async def album_tracks(self, album_id: str) -> list[dict]:
         tracks: list[dict] = []

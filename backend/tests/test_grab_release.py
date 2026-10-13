@@ -331,3 +331,22 @@ def test_a_recovery_cap_on_a_vanished_release_is_no_failure(clean, caplog):
 
     assert _said(caplog) == [
         ("INFO", "release 987654: deleted while it was being searched", False)]
+
+
+def test_a_long_bracket_is_left_off_only_when_the_whole_title_finds_nothing():
+    asked: list[str] = []
+
+    class Tidal:
+        async def search(self, artist, title):
+            asked.append(title)
+            return [] if "(" in title else ["the live take"]
+
+    whole = ("Going, Going, Gone (Live at Tarrant County Convention Center Arena, "
+             "Fort Worth, TX - May 16, 1976)")
+    assert run(choose._search(Tidal(), "Bob Dylan", whole)) == ["the live take"]
+    assert asked == [whole, "Going, Going, Gone"]
+
+    asked.clear()
+    assert run(choose._search(Tidal(), "Bob Dylan", "Blonde on Blonde")) == ["the live take"]
+    assert run(choose._search(Tidal(), "Bob Dylan", "(Untitled)")) == []
+    assert asked == ["Blonde on Blonde", "(Untitled)"]

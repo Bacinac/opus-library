@@ -4,7 +4,8 @@ from sqlalchemy.dialects.postgresql import insert
 from conftest import run
 from opus import db
 from opus.models import Artist, Release, Setting, Track
-from opus.music.metadata import tracklists
+from opus.music.metadata import dedupe, tracklists
+from opus.music.metadata.deezer import DeezerNotFound
 
 
 class Asked:
@@ -136,3 +137,52 @@ def test_tracks_already_held_are_not_asked_for(clean, sources):
 
 class DataError(Exception):
     pass
+
+
+def test_a_vanished_deezer_album_gives_up_its_link_and_deezers_twin_answers(
+        clean, sources, monkeypatch):
+    asked = sources(spotify=[])
+
+    class Deezer:
+        async def close(self):
+            pass
+
+        async def get_album_tracks(self, album_id):
+            asked.order.append(f"tracks {album_id}")
+            if album_id == 2:
+                raise DeezerNotFound("Deezer has no data on /album/2")
+            return DEEZER
+
+        async def search_albums(self, query):
+            asked.order.append(f"search {query}")
+            return [{"id": 7, "title": "Record"}, {"id": 8, "title": "Record (Live)"},
+                    {"id": 9, "title": "Record"}]
+
+        async def get_album(self, album_id):
+            return {
+                7: {"artist": {"id": 801, "name": "Sarah Vaughan"}},
+                9: {"artist": {"id": 801, "name": "Sarah Vaughan"},
+                    "contributors": [{"id": 801, "role": "Main"}, {"id": 800, "role": "Main"}]},
+            }[album_id]
+
+    monkeypatch.setattr(tracklists, "DeezerClient", Deezer)
+    monkeypatch.setattr(dedupe, "DeezerClient", Deezer)
+    release_id = run(_release(deezer_id=2, spotify_id="4"))
+
+    async def credit_the_artist():
+        async with db.SessionLocal() as session:
+            release = await session.get(Release, release_id)
+            (await release.awaitable_attrs.artist).deezer_id = 800
+            await session.commit()
+
+    run(credit_the_artist())
+    tracks, count = run(_ensure(release_id))
+
+    assert tracks == [(1, "Uno", 21), (2, "Dos", 22)] and count == 2
+    assert asked.order == ["tracks 2", "spotify", "search Somebody Record", "tracks 9"]
+
+    async def linked():
+        async with db.SessionLocal() as session:
+            return (await session.get(Release, release_id)).deezer_id
+
+    assert run(linked()) == 9

@@ -6,12 +6,58 @@ files. A merged release keeps the earliest known year: the Discogs master year
 is the ORIGINAL release year, while streaming dates are often reissues."""
 
 from rapidfuzz import fuzz
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from opus.models import MusicFile, Release, ReleaseStatus, Track
+from opus.music.metadata.deezer import DeezerClient, DeezerError, album_credits
 from opus.music.textnorm import norm, same_name
 
 TITLE_MATCH_THRESHOLD = 90
+
+
+async def withdraw_deezer_link(session, release: Release, another_act: bool) -> None:
+    """The release stops claiming a Deezer album that is not its own: gone
+    from Deezer, or another act's record under the same name. The row keeps
+    its files and every other source; the facts read from another act's
+    album go with the link."""
+    release.deezer_id = None
+    if another_act:
+        release.label = None
+        release.genres = None
+    await session.execute(
+        update(Track).where(Track.release_id == release.id).values(deezer_id=None))
+
+
+async def adopt_deezer_twin(session, release: Release) -> int | None:
+    """Deezer's own copy of a release only a secondary source lists. Spotify
+    has 'Fall, Through Her Voice' under Billie Holiday; Deezer under Sarah
+    Vaughan, with her billed beside. Taken only with the same title and this
+    artist credited on it by id, and never from another row."""
+    artist = await release.awaitable_attrs.artist
+    if artist.deezer_id is None:
+        return None
+    client = DeezerClient()
+    try:
+        seen: set[int] = set()
+        for query in (f"{artist.name} {release.title}", release.title):
+            for hit in await client.search_albums(query):
+                if hit["id"] in seen or not same_name(hit["title"], release.title):
+                    continue
+                seen.add(hit["id"])
+                taken = (await session.execute(
+                    select(Release.id).where(Release.deezer_id == hit["id"]))).first()
+                if taken is not None:
+                    continue
+                try:
+                    credits = await album_credits(session, client, hit["id"])
+                except DeezerError:
+                    continue
+                if artist.deezer_id in (credits.principal_id, *credits.main_ids):
+                    release.deezer_id = hit["id"]
+                    return hit["id"]
+    finally:
+        await client.close()
+    return None
 
 
 async def _merge_legacy_duplicates(session, releases: list[Release]) -> int:

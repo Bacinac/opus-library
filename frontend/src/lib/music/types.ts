@@ -82,6 +82,8 @@ export type Release = {
 	sources: string[];
 };
 
+export type ArtistAlias = { alias: string; source: 'wikidata' | 'manual' };
+
 export type ArtistDetail = {
 	id: number;
 	name: string;
@@ -97,6 +99,7 @@ export type ArtistDetail = {
 	bio: string | null;
 	enrich_status: string;
 	links: ExternalLink[];
+	aliases: ArtistAlias[];
 	members: RelatedArtist[];
 	groups: RelatedArtist[];
 	releases: Release[];

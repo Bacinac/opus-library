@@ -4,9 +4,9 @@ from sqlalchemy.dialects.postgresql import insert
 
 from conftest import run
 from opus import db
-from opus.models import (Artist, ArtistExternalId, MusicFile, Release, ReleaseStatus, Setting,
-                         Track)
-from opus.music.metadata import discography
+from opus.models import (Artist, ArtistAlias, ArtistExternalId, MusicDownload, MusicFile,
+                         Release, ReleaseStatus, Setting, Track)
+from opus.music.metadata import discography, listings
 from opus.music.metadata.deezer import DeezerError, DeezerNotFound
 from opus.music.metadata.discogs import DiscogsError
 from opus.music.metadata.spotify import SpotifyCooldown, SpotifyError
@@ -79,6 +79,10 @@ class Sources:
                     raise sources.spotify
                 return sources.spotify
 
+            async def cached_artist_albums(self, session, spotify_id):
+                return await listings.cached(session, "spotify", spotify_id,
+                                             lambda: self.artist_albums(spotify_id))
+
             async def close(self):
                 sources.closed.append("spotify")
 
@@ -104,14 +108,14 @@ def sources(monkeypatch, clean):
     monkeypatch.setattr(discography, "SpotifyClient", made.Spotify)
     monkeypatch.setattr(discography, "_refresh_deezer_tracks", made.retrack)
     monkeypatch.setattr(discography, "_wikidata_album_info", made.wikidata)
-    monkeypatch.setattr(discography, "_kept_strays", set())
     return made
 
 
 def page(principal: int, *rows: tuple[int, str, str]) -> tuple[list[dict], dict[int, dict]]:
     albums = [{"id": i, "title": t, "release_date": d, "record_type": "album",
                "cover_medium": f"https://deezer/{i}.jpg"} for i, t, d in rows]
-    return albums, {i: {"artist": {"id": principal}} for i, _, _ in rows}
+    return albums, {i: {"artist": {"id": principal, "name": f"Act {principal}"}}
+                    for i, _, _ in rows}
 
 
 async def _setup(*rows, settings: dict[str, str] | None = None):
@@ -139,7 +143,7 @@ async def _shelf(artist_id: int) -> tuple[list[tuple], list[tuple]]:
         return releases, external
 
 
-def test_a_known_catalogue_is_folded_in_and_its_strays_and_bloat_go(sources, caplog):
+def test_a_known_catalogue_is_folded_in_and_its_strays_and_bloat_go(sources):
     albums, details = page(
         500,
         (9001, "Apsurdni Svijet", "1980-01-01"),
@@ -203,7 +207,6 @@ def test_a_known_catalogue_is_folded_in_and_its_strays_and_bloat_go(sources, cap
         ("Ruke", 9003, None, None, None, "2004-03-03", None, None),
         ("Still Ours", 9101, 7201, None, None, "1995", None, None),
         ("U Širokom Svijetu", 9002, 7002, None, None, "2002-05-05", None, None),
-        ("Unknown Now", 9102, None, None, None, None, None, None),
         ("Wanted Bootleg", None, 7103, None, None, None, None, None),
         ("Wikidata Bootleg", None, 7102, None, "Q7102", None, None, None),
     ]
@@ -211,19 +214,16 @@ def test_a_known_catalogue_is_folded_in_and_its_strays_and_bloat_go(sources, cap
     assert [a for a in sources.asked if a[0] != "deezer album"] == [
         ("retrack", ["Apsurdni Svijet", "Bootleg", "Brod U Boci", "Held Bootleg",
                      "Nobody Credited",
-                     "Plan B", "Ruke", "Still Ours", "U Širokom Svijetu", "Unknown Now",
+                     "Plan B", "Ruke", "Still Ours", "U Širokom Svijetu",
                      "Wanted Bootleg", "Wikidata Bootleg"]),
         ("wikidata", "Q500"),
     ]
-    assert sorted({a[1] for a in sources.asked if a[0] == "deezer album"}) == [
+    assert sorted(a[1] for a in sources.asked if a[0] == "deezer album") == [
         9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9100, 9101, 9102, 9103]
-    assert discography._kept_strays == {40}
-    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
-    assert "stray 'Plan B' (deezer 9006) holds files/downloads — kept, review manually" in warned
 
+    sources.asked.clear()
     run(discography.sync_artist(1))
-    warned_again = [r.getMessage() for r in caplog.records if "review manually" in r.getMessage()]
-    assert len(warned_again) == 1
+    assert sorted(a[1] for a in sources.asked if a[0] == "deezer album") == [9007, 9008]
 
 
 def test_an_act_the_streaming_catalogues_barely_know_is_read_from_discogs(sources):
@@ -376,3 +376,87 @@ def test_discogs_is_asked_only_what_it_has_not_already_answered(sources):
     assert sources.asked == [("discogs", "tok"), ("discogs search", "Nowhere On Discogs"),
                              ("retrack", []), ("wikidata", None)]
     assert sources.closed == ["discogs"]
+
+
+def test_an_album_is_the_artists_by_its_id_its_credit_or_one_of_its_names(sources, caplog):
+    albums, details = page(
+        800,
+        (8001, "Own", "2001-01-01"),
+        (8002, "Duet", "2002-01-01"),
+        (8003, "Other Page", "2003-01-01"),
+        (8004, "Billed First", "2004-01-01"),
+        (8005, "Someone Else", "2005-01-01"),
+        (8006, "Held Elsewhere", "2006-01-01"),
+        (8007, "Being Fetched", "2007-01-01"),
+    )
+    sources.pages[800] = albums
+    sources.albums.update(details)
+    sources.albums.update({
+        8002: {"artist": {"id": 801, "name": "Sarah Vaughan"},
+               "contributors": [{"id": 801, "role": "Main"}, {"id": 800, "role": "Main"}]},
+        8003: {"artist": {"id": 802, "name": "TBF"}},
+        8004: {"artist": {"id": 803, "name": "The Beat Fleet & Gibonni"}},
+        8005: {"artist": {"id": 804, "name": "Neki Drugi"},
+               "contributors": [{"id": 800, "role": "Featured"}]},
+        8006: {"artist": {"id": 804, "name": "Neki Drugi"}},
+        8007: {"artist": {"id": 804, "name": "Neki Drugi"}},
+        8100: DeezerNotFound("gone"), 8101: DeezerNotFound("gone"),
+        8102: DeezerNotFound("gone"),
+    })
+    run(_setup(
+        Artist(id=8, name="The Beat Fleet", deezer_id=800),
+        ArtistAlias(artist_id=8, alias="TBF", source="wikidata"),
+        Release(id=80, artist_id=8, title="Someone Else", deezer_id=8005),
+        Release(id=81, artist_id=8, title="Held Elsewhere", deezer_id=8006,
+                label="Their Label", genres=["Pop"], status=ReleaseStatus.COMPLETE),
+        Track(id=810, release_id=81, position=1, title="One", deezer_id=1),
+        MusicFile(path="/music/TBF/Held Elsewhere/01.flac", track_id=810),
+        Release(id=82, artist_id=8, title="Being Fetched", deezer_id=8007),
+        MusicDownload(release_id=82, channel="slskd", status="queued"),
+        Release(id=83, artist_id=8, title="Gone Yet Held", deezer_id=8100, label="Our Label",
+                status=ReleaseStatus.COMPLETE),
+        Track(id=830, release_id=83, position=1, title="Two", deezer_id=2),
+        MusicFile(path="/music/TBF/Gone But Held/01.flac", track_id=830),
+        Release(id=84, artist_id=8, title="Gone Off Deezer", deezer_id=8101, spotify_id="sp-1"),
+        Release(id=85, artist_id=8, title="Deezer Alone", deezer_id=8102),
+    ))
+
+    run(discography.sync_artist(8))
+
+    async def shelf():
+        async with db.SessionLocal() as session:
+            releases = (await session.execute(
+                select(Release).where(Release.artist_id == 8))).scalars()
+            tracks = (await session.execute(select(Track.id, Track.deezer_id))).all()
+            return (sorted((r.title, r.deezer_id, r.label, r.genres) for r in releases),
+                    sorted(tracks))
+
+    releases, tracks = run(shelf())
+    assert releases == [
+        ("Being Fetched", 8007, None, None),
+        ("Billed First", 8004, None, None),
+        ("Duet", 8002, None, None),
+        ("Gone Off Deezer", None, None, None),
+        ("Gone Yet Held", None, "Our Label", None),
+        ("Held Elsewhere", None, None, None),
+        ("Other Page", 8003, None, None),
+        ("Own", 8001, None, None),
+    ]
+    assert tracks == [(810, None), (830, None)]
+    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warned == ["'Held Elsewhere' (deezer 8006) is credited to Neki Drugi on Deezer "
+                      "but holds 1 files here — Deezer link withdrawn"]
+
+
+@pytest.mark.parametrize(("billed", "names", "owns"), [
+    ("Bob Marley & The Wailers", ("Bob Marley",), True),
+    ("Dino Dvornik feat. Gibonni", ("Dino Dvornik",), True),
+    ("Earth, Wind & Fire", ("Earth",), False),
+    ("Simon & Garfunkel", ("Paul Simon",), False),
+    ("Мајке", ("Majke",), True),
+    ("John Kay & Steppenwolf", ("Steppenwolf", "John Kay & Steppenwolf"), True),
+    ("Pipschips", ("Pips, Chips & Videoclips",), False),
+])
+def test_a_billing_counts_by_its_whole_name_or_its_lead(billed, names, owns):
+    credits = discography.Credits(principal_id=2, principal_name=billed, main_ids=())
+    assert discography._owns(credits, 1, names) is owns

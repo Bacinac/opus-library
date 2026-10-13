@@ -8,7 +8,8 @@ from sqlalchemy import and_ as sa_and, or_ as sa_or, select
 
 from opus.db import SessionLocal
 from opus.music.metadata import tracklists
-from opus.music.metadata.deezer import DeezerClient
+from opus.music.metadata.dedupe import withdraw_deezer_link
+from opus.music.metadata.deezer import DeezerClient, DeezerNotFound
 from opus.music.metadata import wikidata as wd
 from opus.models import Release, ReleaseStatus
 
@@ -66,6 +67,10 @@ async def _records_pass() -> int:
                     log.warning("description backfill failed for release %s: %s", release.id, exc)
                 try:
                     await tracklists.ensure_facts(release, deezer=deezer)
+                except DeezerNotFound:
+                    log.warning("deezer album %s of release %s is gone — link withdrawn",
+                                release.deezer_id, release.id)
+                    await withdraw_deezer_link(session, release, another_act=False)
                 except Exception as exc:
                     log.warning("facts backfill failed for release %s: %s", release.id, exc)
                 await asyncio.sleep(RECORDS_PACE)

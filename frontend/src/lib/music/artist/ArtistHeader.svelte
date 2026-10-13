@@ -1,8 +1,8 @@
 <script lang="ts">
 	// The artist's identity card: portrait, the type/country/years line, the bio,
-	// the people and the outbound links — plus the two actions that re-read the
-	// artist from its sources. It draws what the page loaded and hands every
-	// click back up.
+	// the people and the outbound links — plus the actions that re-read the
+	// artist from its sources and name what else it goes by. It draws what the
+	// page loaded and hands every click back up.
 
 	import { t, type MessageKey } from '$lib/i18n';
 	import { Button, i18n } from '$lib/kit';
@@ -14,13 +14,15 @@
 		syncing,
 		onpickportrait,
 		onsync,
-		onrefresh
+		onrefresh,
+		onaliases
 	}: {
 		artist: ArtistDetail;
 		syncing: boolean;
 		onpickportrait: () => void;
 		onsync: () => void;
 		onrefresh: () => void;
+		onaliases: () => void;
 	} = $props();
 
 	let meta = $derived(
@@ -72,6 +74,7 @@
 	{#snippet actions()}
 		<Button onclick={onsync} disabled={syncing}>{t('artist.syncDiscography')}</Button>
 		<Button onclick={onrefresh}>{t('artist.refresh')}</Button>
+		<Button onclick={onaliases}>{t('artist.aliases')}</Button>
 	{/snippet}
 </MediaHead>
 

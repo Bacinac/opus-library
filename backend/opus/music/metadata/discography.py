@@ -13,6 +13,7 @@ else album). The master year is the ORIGINAL release year — streaming dates
 are often reissues."""
 
 import logging
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -26,26 +27,35 @@ from opus.music.metadata.dedupe import (
     _find_by_source_id,
     _match_by_title,
     _merge_legacy_duplicates,
+    withdraw_deezer_link,
 )
-from opus.music.metadata.deezer import DeezerClient, DeezerError, DeezerNotFound
+from opus.music.metadata.deezer import (
+    Credits,
+    DeezerClient,
+    DeezerError,
+    DeezerNotFound,
+    album_credits,
+)
 from opus.music.metadata.discogs import DiscogsClient, DiscogsError
 from opus.music.metadata.spotify import SpotifyClient, SpotifyCooldown, SpotifyError
 from opus.music.metadata.tracklists import DiscographyError
 from opus.models import (
+    RELEASE_SOURCE_IDS,
     Artist,
+    ArtistAlias,
     ArtistExternalId,
     MusicDownload,
+    MusicDownloadStatus,
     MusicFile,
     Release,
     ReleaseStatus,
     Track,
 )
+from opus.music.textnorm import latin, same_artist
 from opus.settings_store import RuntimeConfig, current_runtime
 from opus import passes
 
 log = logging.getLogger("opus.discography")
-
-_kept_strays: set[int] = set()
 
 
 def spawn_sync(artist_id: int):
@@ -87,13 +97,14 @@ def _streaming_is_blind(candidates: list[dict], career_from: int | None) -> bool
 
 
 async def _gather_candidates(
-    name: str, deezer_id: int | None, external: dict,
-    config, typed_discogs_ids: set[int], career_from: int | None = None,
-) -> tuple[list[dict], int | None, bool, set[int]]:
+    subject: "_Subject",
+) -> tuple[list[dict], int | None, bool, dict[int, str | None]]:
+    name, deezer_id, external, config = (
+        subject.name, subject.deezer_id, subject.external, subject.config)
     candidates: list[dict] = []
-    stray_deezer_ids: set[int] = set()
+    strays: dict[int, str | None] = {}
     if deezer_id is not None:
-        candidates, stray_deezer_ids = await _deezer_candidates(deezer_id)
+        candidates, strays = await _deezer_candidates(deezer_id, subject.names)
 
     # the Discogs BULK rung exists for artists the streaming catalogs barely
     # know (Jugoton-era) — a rich Deezer catalog makes the thousands of
@@ -101,17 +112,18 @@ async def _gather_candidates(
     # master via Wikidata claims instead
     discovered_discogs_id: int | None = None
     discogs_synced = bool(config.get("discogs_token")) and _streaming_is_blind(
-        candidates, career_from)
+        candidates, subject.career_from)
     if discogs_synced:
         found, discovered_discogs_id = await _discogs_candidates(
-            name, external.get("discogs"), config.get("discogs_token"), typed_discogs_ids)
+            name, external.get("discogs"), config.get("discogs_token"),
+            subject.typed_discogs_ids)
         candidates += found
 
     if (external.get("spotify") and config.get("spotify_client_id")
             and config.get("spotify_client_secret")):
         candidates += await _spotify_candidates(external["spotify"], config)
 
-    return candidates, discovered_discogs_id, discogs_synced, stray_deezer_ids
+    return candidates, discovered_discogs_id, discogs_synced, strays
 
 
 def _candidate(source: str, external_id, title: str, release_date: str | None,
@@ -121,33 +133,53 @@ def _candidate(source: str, external_id, title: str, release_date: str | None,
             "cover_url": cover_url}
 
 
-async def _deezer_candidates(deezer_id: int) -> tuple[list[dict], set[int]]:
+# Where a billing names its lead act: 'Bob Marley & The Wailers', 'Dino
+# Dvornik feat. Gibonni'. Not the comma — 'Earth, Wind & Fire' is one act.
+_BILLING = re.compile(r"\s+(?:&|\+|and|with|feat\.?|ft\.?|featuring)\s+", re.IGNORECASE)
+
+
+def _owns(credits: Credits, deezer_id: int, names: tuple[str, ...]) -> bool:
+    """Whether a Deezer album is this artist's. Deezer keeps one act on several
+    pages — 'TBF' beside 'The Beat Fleet' — and bills a joint record to one of
+    the two while crediting both, so the principal id alone threw out records
+    that were the artist's own. The id, a Main credit, or the principal's name
+    (or its billing lead) being one of the artist's names all count."""
+    if credits.principal_id is None or credits.principal_id == deezer_id:
+        return True
+    if deezer_id in credits.main_ids:
+        return True
+    billed = latin(credits.principal_name)
+    lead = _BILLING.split(billed, maxsplit=1)[0]
+    return any(same_artist(latin(name), billed) or same_artist(latin(name), lead)
+               for name in names)
+
+
+async def _deezer_candidates(deezer_id: int,
+                             names: tuple[str, ...]) -> tuple[list[dict], dict[int, str | None]]:
+    """The page's albums this artist owns, and the rest by whose they are
+    instead — None for an album Deezer no longer has."""
     candidates: list[dict] = []
-    strays: set[int] = set()
+    strays: dict[int, str | None] = {}
     client = DeezerClient()
     try:
-        for album in await client.get_artist_albums(deezer_id):
-            # a Deezer artist page mixes in other acts' work (the 'Buco'
-            # page carries a NAREK NK rap album and two Turkish singles);
-            # the album payload names the PRINCIPAL artist — only albums
-            # this artist owns become candidates, the rest are strays
-            try:
-                detail = await client.get_album(album["id"])
-            except DeezerNotFound:
-                continue
-            except DeezerError as exc:
-                log.warning("deezer album %s on page %s could not be read: %s",
-                            album["id"], deezer_id, exc)
-                continue
-            principal = (detail.get("artist") or {}).get("id")
-            if principal is not None and principal != deezer_id:
-                log.info("stray on deezer page %s: %r belongs to artist %s",
-                         deezer_id, album["title"], principal)
-                strays.add(album["id"])
-                continue
-            candidates.append(_candidate(
-                "deezer", album["id"], album["title"], album.get("release_date"),
-                album.get("record_type"), album.get("cover_medium")))
+        async with SessionLocal() as session:
+            for album in await client.get_artist_albums(deezer_id):
+                try:
+                    credits = await album_credits(session, client, album["id"])
+                except DeezerNotFound:
+                    strays[album["id"]] = None
+                    continue
+                except DeezerError as exc:
+                    log.warning("deezer album %s on page %s could not be read: %s",
+                                album["id"], deezer_id, exc)
+                    continue
+                if not _owns(credits, deezer_id, names):
+                    strays[album["id"]] = credits.principal_name
+                    continue
+                candidates.append(_candidate(
+                    "deezer", album["id"], album["title"], album.get("release_date"),
+                    album.get("record_type"), album.get("cover_medium")))
+            await session.commit()
     finally:
         await client.close()
     return candidates, strays
@@ -235,10 +267,13 @@ async def _spotify_candidates(spotify_id: str, config) -> list[dict]:
     spotify = SpotifyClient(config.get("spotify_client_id"),
                             config.get("spotify_client_secret"))
     try:
+        async with SessionLocal() as session:
+            albums = await spotify.cached_artist_albums(session, spotify_id)
+            await session.commit()
         return [_candidate("spotify", album["id"], album["title"],
                            album.get("release_date"), album.get("record_type"),
                            album.get("cover_url"))
-                for album in await spotify.artist_albums(spotify_id)]
+                for album in albums]
     except SpotifyCooldown as exc:
         log.debug("spotify discography skipped: %s", exc)
     except SpotifyError as exc:
@@ -251,6 +286,7 @@ async def _spotify_candidates(spotify_id: str, config) -> list[dict]:
 @dataclass(frozen=True)
 class _Subject:
     name: str
+    names: tuple[str, ...]
     deezer_id: int | None
     wikidata_id: str | None
     career_from: int | None
@@ -277,6 +313,9 @@ async def _load_subject(artist_id: int) -> _Subject:
                 select(ArtistExternalId).where(ArtistExternalId.artist_id == artist_id)
             )).scalars()
         }
+        aliases = (await session.execute(
+            select(ArtistAlias.alias).where(ArtistAlias.artist_id == artist_id)
+        )).scalars()
         typed_discogs_ids = {
             r.discogs_id
             for r in (await session.execute(
@@ -284,7 +323,8 @@ async def _load_subject(artist_id: int) -> _Subject:
             )).scalars()
             if r.discogs_id is not None and r.record_type is not None
         }
-        return _Subject(name=artist.name, deezer_id=artist.deezer_id,
+        return _Subject(name=artist.name, names=(artist.name, *aliases),
+                        deezer_id=artist.deezer_id,
                         wikidata_id=artist.wikidata_id, career_from=_career_from(artist),
                         external=external, typed_discogs_ids=typed_discogs_ids,
                         config=config)
@@ -292,11 +332,8 @@ async def _load_subject(artist_id: int) -> _Subject:
 
 async def sync_artist(artist_id: int) -> dict:
     subject = await _load_subject(artist_id)
-    candidates, discovered_discogs_id, discogs_synced, stray_deezer_ids = (
-        await _gather_candidates(subject.name, subject.deezer_id, subject.external,
-                                 subject.config, subject.typed_discogs_ids,
-                                 subject.career_from)
-    )
+    candidates, discovered_discogs_id, discogs_synced, strays = (
+        await _gather_candidates(subject))
 
     async with SessionLocal() as session:
         if discovered_discogs_id is not None:
@@ -307,8 +344,8 @@ async def sync_artist(artist_id: int) -> dict:
         foreign = await _foreign_deezer_ids(session, artist_id)
         added, linked = _fold_candidates(session, artist_id, releases, candidates, foreign)
         if subject.deezer_id is not None:
-            stray_deezer_ids |= await _unlisted_strays(releases, candidates, subject.deezer_id)
-        await _prune_strays(session, artist_id, releases, stray_deezer_ids)
+            strays |= await _unlisted_strays(session, releases, candidates, strays, subject)
+        await _prune_strays(session, artist_id, releases, strays)
         merged = await _merge_legacy_duplicates(session, releases)
         retracked = await _refresh_deezer_tracks(session, releases)
         dated, retitled = await _wikidata_album_info(session, subject.wikidata_id, releases)
@@ -374,30 +411,31 @@ def _fold_candidates(session, artist_id: int, releases: list[Release],
     return added, linked
 
 
-async def _unlisted_strays(releases: list[Release], candidates: list[dict],
-                           deezer_id: int) -> set[int]:
+async def _unlisted_strays(session, releases: list[Release], candidates: list[dict],
+                           known: dict[int, str | None],
+                           subject: "_Subject") -> dict[int, str | None]:
     # rows the page does NOT list are suspects too: populated from a
     # wrong/ghost page before the identity was corrected (Genesis via a
     # 511-fan bootleg aggregator), or since removed by Deezer — ask the
-    # album itself who its principal artist is
-    listed = {c["external_id"] for c in candidates if c["source"] == "deezer"}
-    strays: set[int] = set()
+    # album itself whose it is
+    listed = {c["external_id"] for c in candidates if c["source"] == "deezer"} | set(known)
+    strays: dict[int, str | None] = {}
     client = DeezerClient()
     try:
         for release in releases:
             if release.deezer_id is None or release.deezer_id in listed:
                 continue
             try:
-                detail = await client.get_album(release.deezer_id)
+                credits = await album_credits(session, client, release.deezer_id)
             except DeezerNotFound:
+                strays[release.deezer_id] = None
                 continue
             except DeezerError as exc:
                 log.warning("deezer album %s of release %s could not be read: %s",
                             release.deezer_id, release.id, exc)
                 continue
-            principal = (detail.get("artist") or {}).get("id")
-            if principal is not None and principal != deezer_id:
-                strays.add(release.deezer_id)
+            if not _owns(credits, subject.deezer_id, subject.names):
+                strays[release.deezer_id] = credits.principal_name
     finally:
         await client.close()
     return strays
@@ -411,36 +449,49 @@ async def _file_count(session, release_id: int) -> int:
     )).scalar()
 
 
-async def _holds_anything(session, release: Release) -> bool:
-    if release.status != ReleaseStatus.NONE or await _file_count(session, release.id):
+_SOUGHT = (ReleaseStatus.WANTED, ReleaseStatus.SEARCHING, ReleaseStatus.DOWNLOADING)
+_MOVING = (MusicDownloadStatus.QUEUED, MusicDownloadStatus.DOWNLOADING,
+           MusicDownloadStatus.IMPORTING)
+
+
+async def _in_flight(session, release: Release) -> bool:
+    if release.status in _SOUGHT:
         return True
     return bool((await session.execute(
         select(func.count()).select_from(MusicDownload)
-        .where(MusicDownload.release_id == release.id)
+        .where(MusicDownload.release_id == release.id, MusicDownload.status.in_(_MOVING))
     )).scalar())
 
 
 async def _prune_strays(session, artist_id: int, releases: list[Release],
-                        stray_deezer_ids: set[int]) -> None:
-    # strays that leaked in before the principal check existed: rows the
-    # Deezer page still lists but credits to someone else — deleted only
-    # while nothing local holds on to them (no files, no downloads)
-    pruned = 0
+                        strays: dict[int, str | None]) -> None:
+    """Rows on a Deezer album that is not this artist's: another act's, or
+    gone from Deezer. A row being fetched is left to finish and judged on
+    the next pass. A row that holds files keeps everything but the Deezer
+    link, and so does a row Deezer only lost when the user asked for it or
+    another source lists it; the rest existed only on Deezer's word and go."""
+    pruned = withdrawn = 0
     for release in list(releases):
-        if release.deezer_id not in stray_deezer_ids:
+        if release.deezer_id not in strays or await _in_flight(session, release):
             continue
-        if await _holds_anything(session, release):
-            if release.id not in _kept_strays:
-                _kept_strays.add(release.id)
-                log.warning("stray %r (deezer %s) holds files/downloads — "
-                            "kept, review manually",
-                            release.title, release.deezer_id)
+        owner = strays[release.deezer_id]
+        files = await _file_count(session, release.id)
+        if owner is not None and files:
+            log.warning("%r (deezer %s) is credited to %s on Deezer but holds %d files "
+                        "here — Deezer link withdrawn", release.title, release.deezer_id,
+                        owner, files)
+        if files or (owner is None and (release.status != ReleaseStatus.NONE or any(
+                getattr(release, source) for source in RELEASE_SOURCE_IDS
+                if source != "deezer_id"))):
+            await withdraw_deezer_link(session, release, another_act=owner is not None)
+            withdrawn += 1
             continue
         await session.delete(release)
         releases.remove(release)
         pruned += 1
-    if pruned:
-        log.info("pruned %d stray deezer rows for artist %s", pruned, artist_id)
+    if pruned or withdrawn:
+        log.info("artist %s: %d stray deezer rows pruned, %d deezer links withdrawn",
+                 artist_id, pruned, withdrawn)
 
 
 async def _purge_discogs_bloat(session, artist_id: int, releases: list[Release]) -> None:

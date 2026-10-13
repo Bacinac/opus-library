@@ -1,8 +1,9 @@
 """Tracklist materialisation: the tracks a release still lacks, fetched on
 demand from whichever source knows it (the catalogues, Discogs, Spotify — in
-that order), plus the album description from its Wikipedia article. Nothing
-here decides identity — it fills in a release the sync already built, and
-fails loud when no configured source can. Owns DiscographyError, the failure
+that order, and last Deezer's own copy of a release only a secondary source
+lists), plus the album description from its Wikipedia article. Identity is
+dedupe's to decide; this fills in a release the sync already built, and fails
+loud when no source can. Owns DiscographyError, the failure
 both this fill-in and the sync raise."""
 
 import logging
@@ -14,7 +15,8 @@ from sqlalchemy import select
 
 from opus.music.metadata import catalog as catalogs
 from opus.music.metadata import wikidata as wd
-from opus.music.metadata.deezer import DeezerClient
+from opus.music.metadata import dedupe
+from opus.music.metadata.deezer import DeezerClient, DeezerNotFound
 from opus.music.metadata.discogs import DiscogsClient
 from opus.music.metadata.spotify import SpotifyClient
 from opus.models import TRACK_CATALOG_IDS, Release, Track
@@ -202,6 +204,12 @@ async def ensure_tracks(session, release: Release) -> list[Track]:
     for source, fetch in _sources(release, config):
         try:
             rows = await fetch()
+        except DeezerNotFound as exc:
+            log.warning("deezer album %s of release %s is gone — link withdrawn",
+                        release.deezer_id, release.id)
+            await dedupe.withdraw_deezer_link(session, release, another_act=False)
+            tried.append(f"{source}: {exc}")
+            continue
         except Exception as exc:
             log.warning("%s tracklist of release %s could not be read: %s",
                         source, release.id, exc)
@@ -210,6 +218,12 @@ async def ensure_tracks(session, release: Release) -> list[Track]:
         if rows:
             break
         tried.append(f"{source}: no tracks")
+
+    if not rows and release.deezer_id is None:
+        if (twin := await dedupe.adopt_deezer_twin(session, release)) is not None:
+            log.info("release %s (%s) takes its tracklist from deezer album %s",
+                     release.id, release.title, twin)
+            rows = await _from_deezer(twin)
 
     if not rows:
         raise DiscographyError(

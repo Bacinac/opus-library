@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from opus.music.classify import classify_release, pressing_of
 from opus.music.metadata import wikidata as wd
-from opus.music.metadata.dedupe import TITLE_MATCH_THRESHOLD, _year
+from opus.music.metadata.dedupe import TITLE_MATCH_THRESHOLD, _year, withdraw_deezer_link
 from opus.music.metadata.deezer import DeezerClient, DeezerError, DeezerNotFound
 from opus.music.metadata.tracklists import strip_edition_qualifier
 from opus.models import MusicFile, Release, Track, WikiAlbumCache
@@ -23,9 +23,6 @@ log = logging.getLogger("opus.discography")
 WIKI_TITLE_THRESHOLD = 65
 
 _wikipedia_info: dict[str, dict] = {}
-
-# a Deezer album that has no tracklist says so on every pass; once is enough
-_no_deezer_tracklist: set[int] = set()
 
 
 async def get_wiki_info(session, client: wd.WikidataClient, qid: str) -> dict:
@@ -81,15 +78,14 @@ async def _refresh_deezer_tracks(session, releases: list[Release]) -> int:
             # only safe when the order is unambiguous
             if positions != sorted(set(positions)):
                 continue
-            if release.deezer_id in _no_deezer_tracklist:
-                continue
             if client is None:
                 client = DeezerClient()
             try:
                 rows = await client.get_album_tracks(release.deezer_id)
-            except DeezerNotFound as exc:
-                _no_deezer_tracklist.add(release.deezer_id)
-                log.warning("deezer has no tracklist for release %s: %s", release.id, exc)
+            except DeezerNotFound:
+                log.warning("deezer album %s of release %s is gone — link withdrawn",
+                            release.deezer_id, release.id)
+                await withdraw_deezer_link(session, release, another_act=False)
                 continue
             except DeezerError as exc:
                 log.error("deezer tracklist refresh failed for release %s: %s",

@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,6 +31,7 @@ from opus.music.metadata.spotify import SpotifyClient, SpotifyCooldown, SpotifyE
 from opus.music.metadata.wikidata import WikidataClient
 from opus.models import (
     Artist,
+    ArtistAlias,
     ArtistExternalId,
     ArtistRelation,
     Image,
@@ -44,7 +45,7 @@ from opus.models import (
 from opus.music.tagging import tagger
 from opus.settings_store import current_runtime
 from opus.api.routers.music.releases import _pick_edition, _track_playback
-from opus.music.textnorm import PARENS, answers, norm, same_artist, title_score
+from opus.music.textnorm import PARENS, answers, artist_key, norm, same_artist, title_score
 
 router = APIRouter()
 log = logging.getLogger("opus.api")
@@ -455,6 +456,7 @@ async def get_artist(artist_id: int, session: AsyncSession = Depends(get_session
         "bio": artist.bio,
         "enrich_status": artist.enrich_status,
         "links": _artist_links(artist),
+        "aliases": await _aliases_of(session, artist_id),
         "members": members,
         "groups": groups,
         "releases": [
@@ -670,6 +672,43 @@ async def enrich_artist(artist_id: int, session: AsyncSession = Depends(get_sess
         raise HTTPException(404, "artist not found")
     enrich.spawn_enrich(artist_id)
     return {"status": "queued"}
+
+
+async def _aliases_of(session, artist_id: int) -> list[dict]:
+    rows = (await session.execute(
+        select(ArtistAlias).where(ArtistAlias.artist_id == artist_id)
+        .order_by(ArtistAlias.source.desc(), func.lower(ArtistAlias.alias))
+    )).scalars()
+    return [{"alias": row.alias, "source": row.source} for row in rows]
+
+
+class AliasesBody(BaseModel):
+    aliases: list[str]
+
+
+@router.put("/artists/{artist_id}/aliases")
+async def set_aliases(body: AliasesBody, artist_id: int,
+                      session: AsyncSession = Depends(get_session)):
+    """The names the user knows the act by beside Wikidata's. The discography
+    is read again at once, because a name decides whose a Deezer album is."""
+    artist = await session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(404, "artist not found")
+    listed = {artist_key(row.alias) for row in (await session.execute(
+        select(ArtistAlias).where(ArtistAlias.artist_id == artist_id,
+                                  ArtistAlias.source == "wikidata"))).scalars()}
+    kept: dict[str, str] = {}
+    for alias in (a.strip()[:500] for a in body.aliases):
+        key = artist_key(alias)
+        if key and key not in listed and not same_artist(alias, artist.name):
+            kept.setdefault(key, alias)
+    await session.execute(delete(ArtistAlias).where(ArtistAlias.artist_id == artist_id,
+                                                    ArtistAlias.source == "manual"))
+    session.add_all(ArtistAlias(artist_id=artist_id, alias=alias, source="manual")
+                    for alias in kept.values())
+    await session.commit()
+    discography.spawn_sync(artist_id)
+    return await _aliases_of(session, artist_id)
 
 
 @router.get("/artists/{artist_id}/identity-candidates")

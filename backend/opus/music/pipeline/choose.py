@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from sqlalchemy import func, select
 
 from opus.music.channels import enabled_channels
+from opus.music.classify import EDITION_SUFFIX
 from opus.acquire import AcquireError
 from opus.music.channels.base import Channel, Contents
 from opus.db import SessionLocal
@@ -20,6 +21,20 @@ from opus.settings_store import RuntimeConfig, current_runtime
 from opus.music.pipeline import state
 
 log = logging.getLogger("opus.music.pipeline")
+
+
+async def _search(channel: Channel, artist_name: str, album_title: str) -> list:
+    """What the channel offers for the record. A catalogue's search can choke
+    on a long bracket — Tidal answers nothing to Dylan's 'Going, Going, Gone
+    (Live at Tarrant County Convention Center Arena, Fort Worth, TX - May 16,
+    1976)' and finds it by the name before the bracket — so the shorter name is
+    asked when the whole one finds nothing. What comes back is still judged
+    against the whole title."""
+    candidates = await channel.search(artist_name, album_title)
+    shorter = EDITION_SUFFIX.sub("", album_title).strip()
+    if candidates or not shorter or shorter == album_title.strip():
+        return candidates
+    return await channel.search(artist_name, shorter)
 
 
 # fetching a manifest may count against the indexer's daily grab quota, so only
@@ -58,7 +73,7 @@ async def search_candidates(release_id: int) -> list[ScoredCandidate] | None:
     scored: list[ScoredCandidate] = []
     for channel in channels_to_ask(config, automatic=False):
         try:
-            candidates = await channel.search(artist_name, album_title)
+            candidates = await _search(channel, artist_name, album_title)
         except AcquireError as exc:
             log.error("candidates for release %s: %s search failed: %s",
                      release_id, channel.name, exc)
@@ -274,7 +289,7 @@ async def best_on_channel(release_id: int, channel: Channel, brief: _Brief,
                            mode: str) -> ScoredCandidate | None:
     state.searching[release_id] = channel.name
     try:
-        candidates = await channel.search(brief.artist_name, brief.album_title)
+        candidates = await _search(channel, brief.artist_name, brief.album_title)
     except AcquireError as exc:
         log.error("channel %s search failed: %s", channel.name, exc)
         return None

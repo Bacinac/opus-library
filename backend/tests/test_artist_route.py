@@ -4,9 +4,10 @@ from sqlalchemy.dialects.postgresql import insert
 
 from conftest import library, run, signed_in
 from opus import db
-from opus.models import (Artist, ArtistExternalId, ArtistRelation, Image, MusicDownload,
-                         MusicDownloadStatus, MusicFile, Release, ReleaseStatus,
+from opus.models import (Artist, ArtistAlias, ArtistExternalId, ArtistRelation, Image,
+                         MusicDownload, MusicDownloadStatus, MusicFile, Release, ReleaseStatus,
                          ReleaseVariant, Setting, Track)
+from opus.music.metadata import discography
 from opus.music.pipeline import state
 
 SEEN = datetime.datetime(2026, 3, 1, 12, 0, tzinfo=datetime.UTC)
@@ -133,6 +134,10 @@ def test_an_artist_page_carries_everything_the_shelf_and_the_player_read(quick, 
 
     async def scenario():
         await _shelf()
+        async with db.SessionLocal() as session:
+            session.add_all([ArtistAlias(artist_id=1, alias="Čorba", source="manual"),
+                             ArtistAlias(artist_id=1, alias="Riblja", source="wikidata")])
+            await session.commit()
         async with library(await signed_in("boss")) as client:
             return await client.get("/api/music/artists/1")
 
@@ -141,7 +146,8 @@ def test_an_artist_page_carries_everything_the_shelf_and_the_player_read(quick, 
     page = answer.json()
     assert list(page) == ["id", "name", "image_url", "backdrop_url", "monitored", "deezer_id",
                           "wikidata_id", "artist_type", "country", "country_hr", "begin_year", "end_year",
-                          "bio", "enrich_status", "links", "members", "groups", "releases"]
+                          "bio", "enrich_status", "links", "aliases", "members", "groups",
+                          "releases"]
     assert {k: v for k, v in page.items() if k != "releases"} == {
         "id": 1, "name": "Riblja Čorba", "image_url": "https://img/band.jpg",
         "backdrop_url": "https://img/wide.jpg", "monitored": True, "deezer_id": 100,
@@ -155,6 +161,8 @@ def test_an_artist_page_carries_everything_the_shelf_and_the_player_read(quick, 
             {"source": "wikidata", "url": "https://www.wikidata.org/wiki/Q1"},
             {"source": "wikipedia", "url": "https://sr.wikipedia.org/wiki/Riblja"},
         ],
+        "aliases": [{"alias": "Riblja", "source": "wikidata"},
+                    {"alias": "Čorba", "source": "manual"}],
         "members": [{"id": 2, "name": "Bora Đorđević", "monitored": False}],
         "groups": [{"id": 3, "name": "Zvezde", "monitored": True}],
     }
@@ -214,3 +222,29 @@ def test_an_artists_songs_come_once_each_from_the_record_they_first_came_out_on(
         (103, "Kost U Grlu", "03 (5.1).flac"), (172, "Najbolje", "02.flac")]
     assert dsd.json()[0]["codec"] == "dsf"
     assert nobody.status_code == 404
+
+
+def test_the_names_the_user_knows_an_act_by_stand_beside_wikidatas(quick, monkeypatch):
+    synced: list[int] = []
+    monkeypatch.setattr(discography, "spawn_sync", synced.append)
+
+    async def scenario():
+        await _shelf()
+        async with db.SessionLocal() as session:
+            session.add_all([ArtistAlias(artist_id=1, alias="Riblja", source="wikidata"),
+                             ArtistAlias(artist_id=1, alias="Old", source="manual")])
+            await session.commit()
+        body = {"aliases": [" Čorba ", "riblja", "Riblja Čorba", "", "Čorba",
+                            "Bora i Riblja Čorba"]}
+        async with library(await signed_in("filip", role="user")) as client:
+            refused = await client.put("/api/music/artists/1/aliases", json=body)
+        async with library(await signed_in("boss")) as client:
+            return refused, await client.put("/api/music/artists/1/aliases", json=body)
+
+    refused, answer = run(scenario())
+    assert refused.status_code == 403
+    assert answer.status_code == 200
+    assert answer.json() == [{"alias": "Riblja", "source": "wikidata"},
+                             {"alias": "Bora i Riblja Čorba", "source": "manual"},
+                             {"alias": "Čorba", "source": "manual"}]
+    assert synced == [1]

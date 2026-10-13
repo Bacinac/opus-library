@@ -3,10 +3,14 @@ Rate limit: 50 requests per 5 seconds per IP; on quota errors (code 4) we back
 off and retry instead of failing the whole operation."""
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import httpx
+from sqlalchemy.dialects.postgresql import insert
 
 from opus import http
+from opus.models import DeezerAlbumCredit
 from opus.music.textnorm import same_artist
 
 BASE_URL = "https://api.deezer.com"
@@ -164,3 +168,34 @@ class DeezerClient:
         """Unlike the album payload's embedded track list, this endpoint
         includes track_position and disk_number."""
         return await self._paginate(f"/album/{deezer_id}/tracks", f"album {deezer_id} tracks")
+
+
+CREDITS_DAYS = 30
+
+
+@dataclass(frozen=True)
+class Credits:
+    principal_id: int | None
+    principal_name: str
+    main_ids: tuple[int, ...]
+
+
+async def album_credits(session, client: DeezerClient, album_id: int) -> Credits:
+    """Who Deezer credits the album to, read once a month. Raises what
+    get_album raises; a vanished album is not remembered, its row goes."""
+    now = datetime.now(timezone.utc)
+    row = await session.get(DeezerAlbumCredit, album_id)
+    if row is not None and row.fetched_at > now - timedelta(days=CREDITS_DAYS):
+        return Credits(row.principal_id, row.principal_name, tuple(row.main_ids))
+    album = await client.get_album(album_id)
+    principal = album.get("artist") or {}
+    credits = Credits(
+        principal.get("id"), (principal.get("name") or "").strip()[:500],
+        tuple(c["id"] for c in album.get("contributors") or []
+              if c.get("role") == "Main" and c.get("id") is not None))
+    values = {"principal_id": credits.principal_id, "principal_name": credits.principal_name,
+              "main_ids": list(credits.main_ids), "fetched_at": now}
+    await session.execute(
+        insert(DeezerAlbumCredit).values(album_id=album_id, **values)
+        .on_conflict_do_update(index_elements=[DeezerAlbumCredit.album_id], set_=values))
+    return credits

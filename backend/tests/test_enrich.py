@@ -3,7 +3,8 @@ from sqlalchemy import select
 
 from conftest import run
 from opus import db
-from opus.models import Artist, ArtistExternalId, ArtistRelation, EnrichStatus, Image, Release
+from opus.models import (Artist, ArtistAlias, ArtistExternalId, ArtistRelation, EnrichStatus,
+                         Image, Release)
 from opus.music.metadata import enrich
 
 
@@ -22,6 +23,10 @@ def year(y):
 ENTITIES = {
     "Q1": {
         "labels": {"hr": {"value": "Bijelo dugme"}},
+        "aliases": {"en": [{"value": "Bijelo Dugme"}, {"value": "Dugme"}, {"value": "BD"},
+                           {"value": "White Button"}, {"value": "Bijelo dugme (band)"},
+                           {"value": "00008955074 IPI"}],
+                    "sr": [{"value": "Бијело дугме"}]},
         "sitelinks": {"hrwiki": {"title": "Bijelo dugme"}, "enwiki": {"title": "Bijelo Dugme"}},
         "claims": {
             "P31": [item("Q215380")], "P571": [year(1974)], "P495": [item("Q83286")],
@@ -147,6 +152,8 @@ async def _shelf() -> dict:
             "images": [(names[i.entity_id], i.url) for i in (await session.execute(select(Image))).scalars()],
             "releases": sorted((names[r.artist_id], r.title)
                                for r in (await session.execute(select(Release))).scalars()),
+            "aliases": sorted((names[a.artist_id], a.alias, a.source)
+                              for a in (await session.execute(select(ArtistAlias))).scalars()),
         }
 
 
@@ -155,6 +162,9 @@ def test_a_band_is_resolved_and_its_line_up_gathered(sources):
         Artist(id=101, name="BIJELO DUGME", deezer_id=1000, tidal_id=77),
         Artist(id=102, name="Goran Bregović"),
         Artist(id=103, name="Bijelo dugme (dup)", wikidata_id="Q1", monitored=False),
+        ArtistAlias(artist_id=101, alias="Old Wikidata Name", source="wikidata"),
+        ArtistAlias(artist_id=103, alias="Dugmići", source="manual"),
+        ArtistAlias(artist_id=103, alias="White Button", source="manual"),
         Release(artist_id=101, title="Kad bi' bio bijelo dugme", release_date="1974-11-01"),
         Release(artist_id=103, title="Eto! Baš hoću!", release_date="1976-01-01"),
     ))
@@ -179,6 +189,8 @@ def test_a_band_is_resolved_and_its_line_up_gathered(sources):
                                  ("Bijelo dugme", "musicbrainz", "mb-dugme")]
     assert shelf["images"] == [("Bijelo dugme", shelf["artists"][101][10])]
     assert [artist for artist, _ in shelf["releases"]] == ["Bijelo dugme", "Bijelo dugme"]
+    assert shelf["aliases"] == [("Bijelo dugme", "Dugmići", "manual"),
+                                ("Bijelo dugme", "White Button", "manual")]
     assert sources == [101]
 
 
@@ -218,3 +230,16 @@ def test_an_artist_nobody_can_resolve_is_left_unresolved_but_dated(sources):
     assert client.asked == [("search", "Mile i Putnici"), ("titles", "hr", "Mile i Putnici"),
                             ("titles", "sr", "Mile i Putnici"), ("titles", "en", "Mile i Putnici")]
     assert sources == []
+
+
+@pytest.mark.parametrize(("listed", "name", "kept"), [
+    (["TBF", "T.B.F.", "ТБФ"], "The Beat Fleet", ["T.B.F.", "TBF"]),
+    (["Dylan", "Dylan, Bob", "Jack Frost", "00008955074 IPI", "Дилан"], "Bob Dylan",
+     ["Jack Frost"]),
+    (["J. J.", "Cale", "J.J. Cale", "J J Cale"], "JJ Cale", ["J.J. Cale"]),
+    (["Steppenwolf (band)", "John Kay & Steppenwolf"], "Steppenwolf",
+     ["John Kay & Steppenwolf"]),
+    (["Majke"], "Мајке", []),
+])
+def test_only_names_that_could_be_no_other_act_are_taken_from_wikidata(listed, name, kept):
+    assert enrich._aliases(listed, name) == kept

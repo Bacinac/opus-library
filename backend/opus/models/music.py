@@ -131,6 +131,20 @@ class ArtistExternalId(Base):
     artist: Mapped[Artist] = relationship(back_populates="external_ids")
 
 
+class ArtistAlias(Base):
+    """Another name the act is credited under. Deezer keeps one act on several
+    pages ('TBF' beside 'The Beat Fleet'), and an album billed to the other
+    page is still the act's own. Wikidata's aliases are rewritten at every
+    enrichment; the ones somebody typed stay until somebody removes them."""
+
+    __tablename__ = "artist_aliases"
+
+    artist_id: Mapped[int] = mapped_column(
+        ForeignKey("artists.id", ondelete="CASCADE"), primary_key=True)
+    alias: Mapped[str] = mapped_column(String(500), primary_key=True)
+    source: Mapped[str] = mapped_column(String(16))  # wikidata | manual
+
+
 class ArtistRelation(Base):
     __tablename__ = "artist_relations"
     __table_args__ = (UniqueConstraint("artist_id", "related_artist_id", "relation"),)
@@ -293,18 +307,46 @@ class TrackLyrics(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
-class DiscogsMastersCache(Base):
-    """An artist's main-masters listing — Discogs paginates the FULL release
-    catalog at 60 req/min, which for mega-artists is 40+ pages; fetched once
-    per week instead of once per process."""
+class CatalogListing(Base):
+    """An artist's releases as a catalogue pages them. Discogs walks its full
+    catalogue at 60 req/min, 40+ pages for a mega-artist; Spotify pages a long
+    career twenty records at a time and answers a pass that asks for every
+    followed artist four times a day with a day-long ban. Read once a week."""
 
-    __tablename__ = "discogs_masters_cache"
+    __tablename__ = "catalog_listings"
 
-    artist_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    masters: Mapped[list] = mapped_column(JSONB)
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    artist_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    items: Mapped[list] = mapped_column(JSONB)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class DeezerAlbumCredit(Base):
+    """Who Deezer credits an album to: the principal page and every page billed
+    as a main artist beside it. The sync asks it of every album on every
+    followed artist's page, and the answer almost never changes."""
+
+    __tablename__ = "deezer_album_credits"
+
+    album_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    principal_id: Mapped[int | None] = mapped_column(BigInteger)
+    principal_name: Mapped[str] = mapped_column(String(500), default="")
+    main_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SourceCooldown(Base):
+    """Until when a source has told us not to ask. It outlives the process:
+    a restart that forgets it asks straight into the ban."""
+
+    __tablename__ = "source_cooldowns"
+
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class FolderScanCache(Base):

@@ -17,6 +17,7 @@
 		toasts
 	} from '$lib/kit';
 	import ArtworkPicker from '$lib/music/ArtworkPicker.svelte';
+	import AliasesDialog from '$lib/music/artist/AliasesDialog.svelte';
 	import ArtistHeader from '$lib/music/artist/ArtistHeader.svelte';
 	import CandidatePicker from '$lib/music/artist/CandidatePicker.svelte';
 	import IdentityPanel from '$lib/music/artist/IdentityPanel.svelte';
@@ -169,6 +170,7 @@
 	}
 
 	let syncing = $state(false);
+	let naming = $state(false);
 
 	async function syncDiscography() {
 		if (!artist) return;
@@ -209,6 +211,7 @@
 			(picker = { entity: 'artists', id: artist!.id, title: t('artwork.artistTitle') })}
 		onsync={syncDiscography}
 		onrefresh={refreshMetadata}
+		onaliases={() => (naming = true)}
 	/>
 
 	{#if artist.enrich_status === 'pending'}
@@ -286,6 +289,16 @@
 			title={picker.title}
 			onclose={() => (picker = null)}
 			onchanged={load}
+		/>
+	{/if}
+
+	{#if naming}
+		<AliasesDialog
+			artistId={artist.id}
+			name={artist.name}
+			aliases={artist.aliases}
+			onclose={() => (naming = false)}
+			onsaved={load}
 		/>
 	{/if}
 
