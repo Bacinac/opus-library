@@ -325,15 +325,15 @@ class CatalogListing(Base):
 
 class DeezerAlbumCredit(Base):
     """Who Deezer credits an album to: the principal page and every page billed
-    as a main artist beside it. The sync asks it of every album on every
-    followed artist's page, and the answer almost never changes."""
+    as a main artist beside it, as [id, name] pairs. The sync asks it of every
+    album on every followed artist's page, and the answer almost never changes."""
 
     __tablename__ = "deezer_album_credits"
 
     album_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     principal_id: Mapped[int | None] = mapped_column(BigInteger)
     principal_name: Mapped[str] = mapped_column(String(500), default="")
-    main_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    mains: Mapped[list] = mapped_column(JSONB, default=list)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

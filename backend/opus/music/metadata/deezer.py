@@ -2,6 +2,7 @@
 Rate limit: 50 requests per 5 seconds per IP; on quota errors (code 4) we back
 off and retry instead of failing the whole operation."""
 
+import html
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -177,7 +178,16 @@ CREDITS_DAYS = 30
 class Credits:
     principal_id: int | None
     principal_name: str
-    main_ids: tuple[int, ...]
+    mains: tuple[tuple[int, str], ...]
+
+    @property
+    def main_ids(self) -> tuple[int, ...]:
+        return tuple(page for page, _ in self.mains)
+
+
+def _page_name(artist: dict) -> str:
+    # Some pages carry their name HTML-escaped: 'Urban &amp; 4'.
+    return html.unescape(artist.get("name") or "").strip()[:500]
 
 
 async def album_credits(session, client: DeezerClient, album_id: int) -> Credits:
@@ -186,15 +196,16 @@ async def album_credits(session, client: DeezerClient, album_id: int) -> Credits
     now = datetime.now(timezone.utc)
     row = await session.get(DeezerAlbumCredit, album_id)
     if row is not None and row.fetched_at > now - timedelta(days=CREDITS_DAYS):
-        return Credits(row.principal_id, row.principal_name, tuple(row.main_ids))
+        return Credits(row.principal_id, row.principal_name,
+                       tuple((page, name) for page, name in row.mains))
     album = await client.get_album(album_id)
     principal = album.get("artist") or {}
     credits = Credits(
-        principal.get("id"), (principal.get("name") or "").strip()[:500],
-        tuple(c["id"] for c in album.get("contributors") or []
+        principal.get("id"), _page_name(principal),
+        tuple((c["id"], _page_name(c)) for c in album.get("contributors") or []
               if c.get("role") == "Main" and c.get("id") is not None))
     values = {"principal_id": credits.principal_id, "principal_name": credits.principal_name,
-              "main_ids": list(credits.main_ids), "fetched_at": now}
+              "mains": [list(main) for main in credits.mains], "fetched_at": now}
     await session.execute(
         insert(DeezerAlbumCredit).values(album_id=album_id, **values)
         .on_conflict_do_update(index_elements=[DeezerAlbumCredit.album_id], set_=values))

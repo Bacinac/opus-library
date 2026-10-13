@@ -145,15 +145,24 @@ def _owns(credits: Credits, deezer_id: int, names: tuple[str, ...]) -> bool:
     keeps one act on several pages — 'TBF' beside 'The Beat Fleet' — and bills
     a joint record to a page of its own or to one of the two while crediting
     both, so the principal id alone threw out records that were the artist's
-    own. The id, a Main credit, or one of the artist's names in the billing
-    all count."""
+    own. The id, a Main credit, or one of the artist's names among the acts
+    credited all count; so does a band whose name Deezer split into its acts,
+    'Urban & 4' billed as 'Urban' with '4' beside it."""
     if credits.principal_id is None or credits.principal_id == deezer_id:
         return True
     if deezer_id in credits.main_ids:
         return True
-    billed = latin(credits.principal_name)
-    parts = (billed, *_BILLING.split(billed))
-    return any(same_artist(latin(name), part) for name in names for part in parts)
+    credited = [act for billed in (credits.principal_name, *(name for _, name in credits.mains))
+                for act in (latin(billed), *_BILLING.split(latin(billed)))]
+
+    def is_credited(act: str) -> bool:
+        return any(same_artist(act, other) for other in credited)
+
+    for name in map(latin, names):
+        acts = _BILLING.split(name)
+        if is_credited(name) or (len(acts) > 1 and all(map(is_credited, acts))):
+            return True
+    return False
 
 
 async def _deezer_candidates(deezer_id: int,

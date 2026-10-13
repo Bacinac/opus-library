@@ -7,7 +7,7 @@ from opus import db
 from opus.models import (Artist, ArtistAlias, ArtistExternalId, MusicDownload, MusicFile,
                          Release, ReleaseStatus, Setting, Track)
 from opus.music.metadata import discography, listings
-from opus.music.metadata.deezer import DeezerError, DeezerNotFound
+from opus.music.metadata.deezer import Credits, DeezerError, DeezerNotFound, album_credits
 from opus.music.metadata.discogs import DiscogsError
 from opus.music.metadata.spotify import SpotifyCooldown, SpotifyError
 from opus.music.metadata.tracklists import DiscographyError
@@ -448,18 +448,46 @@ def test_an_album_is_the_artists_by_its_id_its_credit_or_one_of_its_names(source
                       "but holds 1 files here — Deezer link withdrawn"]
 
 
-@pytest.mark.parametrize(("billed", "names", "owns"), [
-    ("Bob Marley & The Wailers", ("Bob Marley",), True),
-    ("Dino Dvornik feat. Gibonni", ("Dino Dvornik",), True),
-    ("Beth Hart, Joe Bonamassa", ("Beth Hart",), True),
-    ("Joe Bonamassa & Beth Hart", ("Beth Hart",), True),
-    ("Earth, Wind & Fire", ("Maurice White",), False),
-    ("Simon & Garfunkel", ("Paul Simon",), False),
-    ("Мајке", ("Majke",), True),
-    ("John Kay & Steppenwolf", ("Steppenwolf", "John Kay & Steppenwolf"), True),
-    ("Pipschips", ("Pips, Chips & Videoclips",), False),
-    ("Pipschips&Videoclips", ("Pips, Chips & Videoclips", "Pipschips"), True),
+@pytest.mark.parametrize(("billed", "mains", "names", "owns"), [
+    ("Bob Marley & The Wailers", (), ("Bob Marley",), True),
+    ("Dino Dvornik feat. Gibonni", (), ("Dino Dvornik",), True),
+    ("Beth Hart, Joe Bonamassa", (), ("Beth Hart",), True),
+    ("Joe Bonamassa & Beth Hart", (), ("Beth Hart",), True),
+    ("Earth, Wind & Fire", (), ("Maurice White",), False),
+    ("Simon & Garfunkel", (), ("Paul Simon",), False),
+    ("Мајке", (), ("Majke",), True),
+    ("John Kay & Steppenwolf", (), ("Steppenwolf", "John Kay & Steppenwolf"), True),
+    ("Pipschips", (), ("Pips, Chips & Videoclips",), False),
+    ("Pipschips&Videoclips", (), ("Pips, Chips & Videoclips", "Pipschips"), True),
+    ("Urban", ((3, "Damir Urban"), (4, "4")), ("Urban&4",), True),
+    ("Urban", ((3, "Damir Urban"), (5, "Urban & 4")), ("Urban&4",), True),
+    ("Urban", ((3, "Damir Urban"), (6, "Hauser")), ("Urban&4",), False),
+    ("Paul Simon", ((3, "Paul Simon"), (7, "Art Garfunkel")), ("Simon & Garfunkel",), False),
 ])
-def test_a_billing_counts_by_its_whole_name_or_any_act_it_names(billed, names, owns):
-    credits = discography.Credits(principal_id=2, principal_name=billed, main_ids=())
+def test_an_album_counts_by_any_act_credited_or_by_all_the_acts_of_its_name(
+        billed, mains, names, owns):
+    credits = discography.Credits(principal_id=2, principal_name=billed, mains=mains)
     assert discography._owns(credits, 1, names) is owns
+
+
+def test_credits_keep_every_main_page_by_its_unescaped_name():
+    class Client:
+        calls = 0
+
+        async def get_album(self, album_id):
+            Client.calls += 1
+            return {"artist": {"id": 3, "name": "Damir Urban"},
+                    "contributors": [{"id": 3, "name": "Damir Urban", "role": "Main"},
+                                     {"id": 5, "name": "Urban &amp; 4", "role": "Main"},
+                                     {"id": 9, "name": "Producer", "role": "Featured"}]}
+
+    async def ask_twice():
+        async with db.SessionLocal() as session:
+            fetched = await album_credits(session, Client(), 77)
+            await session.commit()
+        async with db.SessionLocal() as session:
+            return fetched, await album_credits(session, Client(), 77)
+
+    fetched, cached = run(ask_twice())
+    assert fetched == cached == Credits(3, "Damir Urban", ((3, "Damir Urban"), (5, "Urban & 4")))
+    assert Client.calls == 1
