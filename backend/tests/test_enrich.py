@@ -234,8 +234,8 @@ def test_an_artist_nobody_can_resolve_is_left_unresolved_but_dated(sources):
 
 @pytest.mark.parametrize(("listed", "name", "kept"), [
     (["TBF", "T.B.F.", "ТБФ"], "The Beat Fleet", ["T.B.F.", "TBF"]),
-    (["Dylan", "Dylan, Bob", "Jack Frost", "00008955074 IPI", "Дилан"], "Bob Dylan",
-     ["Jack Frost"]),
+    (["Dylan", "Dylan, Bob", "Jack Frost", "00008955074 IPI", "Дилан", "জ্যাক ফ্রস্ট",
+      "బాబ్ ల్యాండీ", "ጆይ ኮኮ"], "Bob Dylan", ["Jack Frost"]),
     (["J. J.", "Cale", "J.J. Cale", "J J Cale"], "JJ Cale", ["J.J. Cale"]),
     (["Steppenwolf (band)", "John Kay & Steppenwolf"], "Steppenwolf",
      ["John Kay & Steppenwolf"]),

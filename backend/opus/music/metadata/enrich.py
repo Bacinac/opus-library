@@ -5,6 +5,7 @@ group-membership relations. An artist that cannot be resolved exactly stays
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from sqlalchemy import delete, or_, select, update
@@ -538,6 +539,10 @@ async def _write_identity(session, artist: Artist, facts: _Facts) -> None:
 _REGISTRY_NUMBER = re.compile(r"\d{5,}")
 
 
+def _latin_script(text: str) -> bool:
+    return all(unicodedata.name(ch, "").startswith("LATIN") for ch in text if ch.isalpha())
+
+
 def _aliases(listed: list[str], name: str) -> list[str]:
     """The names Wikidata lists for the act that could only be this act's. A
     surname alone ('Dylan', 'Morrison'), initials ('J. J.'), a registry number
@@ -549,7 +554,7 @@ def _aliases(listed: list[str], name: str) -> list[str]:
     for alias in (a.strip() for a in listed):
         key = artist_key(alias)
         if (sum(ch.isalpha() for ch in key) < 3 or _REGISTRY_NUMBER.search(alias)
-                or "(" in alias or "[" in alias or wd.has_non_latin(alias)
+                or "(" in alias or "[" in alias or not _latin_script(alias)
                 or same_artist(alias, latin(name)) or set(key.split()) < own):
             continue
         kept.setdefault(key, alias)
