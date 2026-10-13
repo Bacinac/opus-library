@@ -458,6 +458,7 @@ def test_an_album_is_the_artists_by_its_id_its_credit_or_one_of_its_names(source
     ("Мајке", ("Majke",), True),
     ("John Kay & Steppenwolf", ("Steppenwolf", "John Kay & Steppenwolf"), True),
     ("Pipschips", ("Pips, Chips & Videoclips",), False),
+    ("Pipschips&Videoclips", ("Pips, Chips & Videoclips", "Pipschips"), True),
 ])
 def test_a_billing_counts_by_its_whole_name_or_any_act_it_names(billed, names, owns):
     credits = discography.Credits(principal_id=2, principal_name=billed, main_ids=())

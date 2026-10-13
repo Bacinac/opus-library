@@ -134,8 +134,9 @@ def _candidate(source: str, external_id, title: str, release_date: str | None,
 
 
 # The acts a billing names: 'Bob Marley & The Wailers', 'Dino Dvornik feat.
-# Gibonni', and Deezer's own joint pages, 'Beth Hart, Joe Bonamassa'.
-_BILLING = re.compile(r"\s*,\s*|\s+(?:&|\+|and|with|feat\.?|ft\.?|featuring)\s+",
+# Gibonni', and Deezer's own joint pages, 'Beth Hart, Joe Bonamassa' and
+# 'Pipschips&Videoclips'.
+_BILLING = re.compile(r"\s*[,&+]\s*|\s+(?:and|with|feat\.?|ft\.?|featuring)\s+",
                       re.IGNORECASE)
 
 
