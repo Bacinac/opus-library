@@ -133,25 +133,26 @@ def _candidate(source: str, external_id, title: str, release_date: str | None,
             "cover_url": cover_url}
 
 
-# Where a billing names its lead act: 'Bob Marley & The Wailers', 'Dino
-# Dvornik feat. Gibonni'. Not the comma — 'Earth, Wind & Fire' is one act.
-_BILLING = re.compile(r"\s+(?:&|\+|and|with|feat\.?|ft\.?|featuring)\s+", re.IGNORECASE)
+# The acts a billing names: 'Bob Marley & The Wailers', 'Dino Dvornik feat.
+# Gibonni', and Deezer's own joint pages, 'Beth Hart, Joe Bonamassa'.
+_BILLING = re.compile(r"\s*,\s*|\s+(?:&|\+|and|with|feat\.?|ft\.?|featuring)\s+",
+                      re.IGNORECASE)
 
 
 def _owns(credits: Credits, deezer_id: int, names: tuple[str, ...]) -> bool:
-    """Whether a Deezer album is this artist's. Deezer keeps one act on several
-    pages — 'TBF' beside 'The Beat Fleet' — and bills a joint record to one of
-    the two while crediting both, so the principal id alone threw out records
-    that were the artist's own. The id, a Main credit, or the principal's name
-    (or its billing lead) being one of the artist's names all count."""
+    """Whether a Deezer album on this artist's page is this artist's. Deezer
+    keeps one act on several pages — 'TBF' beside 'The Beat Fleet' — and bills
+    a joint record to a page of its own or to one of the two while crediting
+    both, so the principal id alone threw out records that were the artist's
+    own. The id, a Main credit, or one of the artist's names in the billing
+    all count."""
     if credits.principal_id is None or credits.principal_id == deezer_id:
         return True
     if deezer_id in credits.main_ids:
         return True
     billed = latin(credits.principal_name)
-    lead = _BILLING.split(billed, maxsplit=1)[0]
-    return any(same_artist(latin(name), billed) or same_artist(latin(name), lead)
-               for name in names)
+    parts = (billed, *_BILLING.split(billed))
+    return any(same_artist(latin(name), part) for name in names for part in parts)
 
 
 async def _deezer_candidates(deezer_id: int,

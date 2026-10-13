@@ -451,12 +451,14 @@ def test_an_album_is_the_artists_by_its_id_its_credit_or_one_of_its_names(source
 @pytest.mark.parametrize(("billed", "names", "owns"), [
     ("Bob Marley & The Wailers", ("Bob Marley",), True),
     ("Dino Dvornik feat. Gibonni", ("Dino Dvornik",), True),
-    ("Earth, Wind & Fire", ("Earth",), False),
+    ("Beth Hart, Joe Bonamassa", ("Beth Hart",), True),
+    ("Joe Bonamassa & Beth Hart", ("Beth Hart",), True),
+    ("Earth, Wind & Fire", ("Maurice White",), False),
     ("Simon & Garfunkel", ("Paul Simon",), False),
     ("Мајке", ("Majke",), True),
     ("John Kay & Steppenwolf", ("Steppenwolf", "John Kay & Steppenwolf"), True),
     ("Pipschips", ("Pips, Chips & Videoclips",), False),
 ])
-def test_a_billing_counts_by_its_whole_name_or_its_lead(billed, names, owns):
+def test_a_billing_counts_by_its_whole_name_or_any_act_it_names(billed, names, owns):
     credits = discography.Credits(principal_id=2, principal_name=billed, main_ids=())
     assert discography._owns(credits, 1, names) is owns
