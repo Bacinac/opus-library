@@ -60,6 +60,7 @@ async def tracks_by_id(ids: str = "", session: AsyncSession = Depends(get_sessio
             "artist_id": t.release.artist_id,
             "artist": t.release.artist.name, "cover_url": t.release.cover_url,
             "duration_s": (t.files[0].duration_sec if t.files else None) or t.duration_sec,
+            "codec": t.files[0].codec if t.files else None,
             # a track whose file has gone is a track that cannot be carried on with
             "playable": bool(t.files),
             "mbids": _mbids(t.files),

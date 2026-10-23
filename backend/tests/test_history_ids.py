@@ -21,7 +21,7 @@ def test_a_track_and_an_episode_carry_the_ids_another_catalogue_knows_them_by(cl
                              Track(id=102, release_id=11, position=2, title="Take")])
             await session.flush()
             session.add_all([
-                MusicFile(path="/music/h/01.flac", track_id=101, tags={
+                MusicFile(path="/music/h/01.flac", track_id=101, codec="flac", tags={
                     "MUSICBRAINZ_TRACKID": RECORDING, "MUSICBRAINZ_ALBUMID": RELEASE,
                     "MUSICBRAINZ_ARTISTID": ARTISTS}),
                 MusicFile(path="/music/h/02.flac", track_id=102, tags={
@@ -51,5 +51,8 @@ def test_a_track_and_an_episode_carry_the_ids_another_catalogue_knows_them_by(cl
     ids = {t["id"]: t["mbids"] for t in tracks}
     assert ids[101] == {"recording": RECORDING, "release": RELEASE, "artists": ARTISTS}
     assert ids[102] == {"recording": None, "release": None, "artists": [ARTISTS[0]]}
+    card = next(t for t in tracks if t["id"] == 101)
+    assert {"id", "playable", "title", "artist", "album", "codec"} <= card.keys()
+    assert card["codec"] == "flac"
     assert episodes[0]["series_tmdb_id"] == 1399
     assert (episodes[0]["season_number"], episodes[0]["number"]) == (2, 3)
