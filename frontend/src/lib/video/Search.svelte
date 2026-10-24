@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { Latest, SearchBox, json, request, toasts } from '$lib/kit';
-	import Found from '$lib/core/Found.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { Latest, SearchBox, json, request, toasts } from '#lib/kit/index.js';
+	import Found from '#lib/core/Found.svelte';
 
 	type Title = {
 		tmdb_id: number;

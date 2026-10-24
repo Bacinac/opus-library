@@ -1,5 +1,5 @@
 // The shapes both halves of the library share. A shape only one half ever sees
-// belongs to that half — $lib/music/types.ts, or the page that renders it.
+// belongs to that half — #lib/music/types.ts, or the page that renders it.
 
 /** The five vocabularies the library speaks. A type is present in the UI when
  * its library path is set, so an install with only music is a music app — with

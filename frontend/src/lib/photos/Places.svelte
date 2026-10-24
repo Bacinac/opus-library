@@ -5,9 +5,9 @@
 	// corrected — the map belongs to the everyday surface, which is Player, and
 	// two maps would be one too many.
 
-	import { t } from '$lib/i18n';
-	import { formatDate, formatNumber, request } from '$lib/kit';
-	import { tileOf } from '$lib/opus';
+	import { t } from '#lib/i18n/index.js';
+	import { formatDate, formatNumber, request } from '#lib/kit/index.js';
+	import { tileOf } from '#lib/opus/index.js';
 
 	type Place = {
 		place: string;

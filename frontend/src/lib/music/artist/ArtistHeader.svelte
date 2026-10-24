@@ -4,10 +4,10 @@
 	// artist from its sources and name what else it goes by. It draws what the
 	// page loaded and hands every click back up.
 
-	import { t, type MessageKey } from '$lib/i18n';
-	import { Button, i18n } from '$lib/kit';
-	import { MediaHead } from '$lib/opus';
-	import type { ArtistDetail } from '$lib/music/types';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { Button, i18n } from '#lib/kit/index.js';
+	import { MediaHead } from '#lib/opus/index.js';
+	import type { ArtistDetail } from '#lib/music/types.js';
 
 	let {
 		artist,

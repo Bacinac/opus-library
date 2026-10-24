@@ -6,10 +6,10 @@
 	// is stateless: the row picked round-trips its own channel/title/ref back
 	// to /grab, the same shape the video picker already uses.
 
-	import { t } from '$lib/i18n';
-	import { Button, Dialog, Tag, formatBytes, formatNumber, json, plural, request, toasts } from '$lib/kit';
-	import { offeredQuality } from '$lib/music/quality';
-	import type { OfferedQuality } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { Button, Dialog, Tag, formatBytes, formatNumber, json, plural, request, toasts } from '#lib/kit/index.js';
+	import { offeredQuality } from '#lib/music/quality.js';
+	import type { OfferedQuality } from '#lib/music/types.js';
 
 	type Candidate = {
 		channel: string;

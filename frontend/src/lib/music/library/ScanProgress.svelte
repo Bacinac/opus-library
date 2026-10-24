@@ -4,9 +4,9 @@
 	// also carries the per-artist and deep-match phases, which run inside the
 	// same scan and would otherwise look stalled.
 
-	import { t, type MessageKey } from '$lib/i18n';
-	import { Notice, Progress, formatNumber } from '$lib/kit';
-	import type { EnrichState, ScanPhase, ScanState } from '$lib/music/types';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { Notice, Progress, formatNumber } from '#lib/kit/index.js';
+	import type { EnrichState, ScanPhase, ScanState } from '#lib/music/types.js';
 
 	let {
 		scan,

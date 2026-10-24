@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t, type MessageKey } from '$lib/i18n';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		Button,
@@ -11,15 +11,15 @@
 		json,
 		toasts,
 		withLang
-	} from '$lib/kit';
+	} from '#lib/kit/index.js';
 	import {
 		SeriesPage,
 		episodeCode,
 		type PageEpisode,
 		type PageSeason
-	} from '$lib/opus';
-	import { aired, countsOf, localDay, marksOf, type EpisodeRow } from '$lib/video/episodes';
-	import ReleasePicker from '$lib/video/ReleasePicker.svelte';
+	} from '#lib/opus/index.js';
+	import { aired, countsOf, localDay, marksOf, type EpisodeRow } from '#lib/video/episodes.js';
+	import ReleasePicker from '#lib/video/ReleasePicker.svelte';
 
 	type SeriesRow = {
 		id: number;

@@ -6,9 +6,9 @@
 	// neither half is theirs — and the films and the records they ARE here for
 	// are watched in the Player, not in this catalogue.
 
-	import { Button, Card } from '$lib/kit';
-	import { t } from '$lib/i18n';
-	import { MODULES } from '$lib/core/modules';
+	import { Button, Card } from '#lib/kit/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { MODULES } from '#lib/core/modules.js';
 
 	const player = MODULES.find((m) => m.key === 'player');
 </script>

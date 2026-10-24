@@ -4,11 +4,11 @@
 	// each one assembled across the years. Neither reskins the other.
 
 	import { SvelteSet } from 'svelte/reactivity';
-	import { Button, PageHead, Picks, SearchBox, formatNumber, request } from '$lib/kit';
-	import { me } from '$lib/opus';
-	import PhotoQuery from '$lib/opus/PhotoQuery.svelte';
-	import PhotoTimeline from '$lib/opus/PhotoTimeline.svelte';
-	import { t, type MessageKey } from '$lib/i18n';
+	import { Button, PageHead, Picks, SearchBox, formatNumber, request } from '#lib/kit/index.js';
+	import { me } from '#lib/opus/index.js';
+	import PhotoQuery from '#lib/opus/PhotoQuery.svelte';
+	import PhotoTimeline from '#lib/opus/PhotoTimeline.svelte';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import Group from './Group.svelte';
 	import Nameless from './Nameless.svelte';
 	import People from './People.svelte';

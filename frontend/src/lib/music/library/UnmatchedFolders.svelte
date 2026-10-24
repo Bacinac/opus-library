@@ -4,10 +4,10 @@
 	// the folder from disk. Both writes happen here; the page is told what to
 	// re-read afterwards.
 
-	import { t, type MessageKey } from '$lib/i18n';
-	import { ArmedButton, Button, formatNumber, json, plural, request, toasts } from '$lib/kit';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { ArmedButton, Button, formatNumber, json, plural, request, toasts } from '#lib/kit/index.js';
 	import FolderReport from './FolderReport.svelte';
-	import type { UnmatchedFolder } from '$lib/music/types';
+	import type { UnmatchedFolder } from '#lib/music/types.js';
 
 	let {
 		folders,

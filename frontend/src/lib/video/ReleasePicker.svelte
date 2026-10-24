@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { Button, Dialog, Tag, formatBytes, formatNumber, json, plural, request, toasts } from '$lib/kit';
+	import { t } from '#lib/i18n/index.js';
+	import { Button, Dialog, Tag, formatBytes, formatNumber, json, plural, request, toasts } from '#lib/kit/index.js';
 
 	type Release = {
 		channel: string;

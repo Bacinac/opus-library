@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { Chips, Dialog, SaveButton, json, request, toasts } from '$lib/kit';
-	import type { ArtistAlias } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { Chips, Dialog, SaveButton, json, request, toasts } from '#lib/kit/index.js';
+	import type { ArtistAlias } from '#lib/music/types.js';
 
 	let {
 		artistId,

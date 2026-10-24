@@ -3,11 +3,11 @@
 	// page knows the pictures and nothing about them: no date, no place, no
 	// face, and no way further into the library.
 
-	import { formatDate, plural, request } from '$lib/kit';
-	import { Wordmark, groundOf, placeholderOf } from '$lib/opus';
-	import PhotoViewer from '$lib/opus/PhotoViewer.svelte';
-	import { t } from '$lib/i18n';
-	import { MODULE } from '$lib/core/modules';
+	import { formatDate, plural, request } from '#lib/kit/index.js';
+	import { Wordmark, groundOf, placeholderOf } from '#lib/opus/index.js';
+	import PhotoViewer from '#lib/opus/PhotoViewer.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { MODULE } from '#lib/core/modules.js';
 
 	let { key }: { key: string } = $props();
 

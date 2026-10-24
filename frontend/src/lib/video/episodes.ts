@@ -1,6 +1,6 @@
-import { t } from '$lib/i18n';
-import { formatNumber } from '$lib/kit';
-import { videoStateMark, type Count, type PageTag } from '$lib/opus';
+import { t } from '#lib/i18n/index.js';
+import { formatNumber } from '#lib/kit/index.js';
+import { videoStateMark, type Count, type PageTag } from '#lib/opus/index.js';
 
 export type EpisodeRow = {
 	id: number;

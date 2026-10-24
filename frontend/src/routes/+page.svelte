@@ -7,18 +7,18 @@
 	// own component instead of a shared "item grid" that would have to be wrong
 	// for four of the five.
 
-	import { me } from '$lib/opus';
-	import { t } from '$lib/i18n';
-	import TypeStrip from '$lib/core/TypeStrip.svelte';
-	import { install } from '$lib/core/install.svelte';
-	import type { MediaType } from '$lib/core/types';
-	import Elsewhere from '$lib/core/Elsewhere.svelte';
-	import Artists from '$lib/music/Artists.svelte';
-	import Photos from '$lib/photos/Photos.svelte';
-	import LibraryScan from '$lib/video/LibraryScan.svelte';
-	import Movies from '$lib/video/Movies.svelte';
-	import Series from '$lib/video/Series.svelte';
-	import WebVideo from '$lib/video/WebVideo.svelte';
+	import { me } from '#lib/opus/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import TypeStrip from '#lib/core/TypeStrip.svelte';
+	import { install } from '#lib/core/install.svelte.js';
+	import type { MediaType } from '#lib/core/types.js';
+	import Elsewhere from '#lib/core/Elsewhere.svelte';
+	import Artists from '#lib/music/Artists.svelte';
+	import Photos from '#lib/photos/Photos.svelte';
+	import LibraryScan from '#lib/video/LibraryScan.svelte';
+	import Movies from '#lib/video/Movies.svelte';
+	import Series from '#lib/video/Series.svelte';
+	import WebVideo from '#lib/video/WebVideo.svelte';
 
 	let type = $state<MediaType | null>(null);
 </script>

@@ -4,7 +4,7 @@
 // typecheck.
 //
 // What both halves share — a setting, a queue row, which media types this
-// install has — is in $lib/core/types.
+// install has — is in #lib/core/types.
 
 export type ReleaseStatus =
 	| 'none'

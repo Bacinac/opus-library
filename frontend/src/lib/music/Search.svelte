@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { Latest, SearchBox, Tag, formatNumber, json, plural, request, toasts } from '$lib/kit';
-	import Found from '$lib/core/Found.svelte';
-	import type { ArtistSearchResult } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { Latest, SearchBox, Tag, formatNumber, json, plural, request, toasts } from '#lib/kit/index.js';
+	import Found from '#lib/core/Found.svelte';
+	import type { ArtistSearchResult } from '#lib/music/types.js';
 
 	function fans(n: number): string {
 		if (n < 1000) return plural(n, 'search.fans.one', 'search.fans.few', 'search.fans.many');

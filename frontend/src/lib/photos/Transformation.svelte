@@ -12,9 +12,9 @@
 	// the next — and names whichever year is nearest. It restarts with the loop,
 	// so it cannot drift further than one pass.
 
-	import { t } from '$lib/i18n';
-	import { formatNumber, request } from '$lib/kit';
-	import { cropOf, morphOf, portraitOf } from '$lib/opus';
+	import { t } from '#lib/i18n/index.js';
+	import { formatNumber, request } from '#lib/kit/index.js';
+	import { cropOf, morphOf, portraitOf } from '#lib/opus/index.js';
 
 	type Frame = { year: number; face: number; straightness: number };
 	type Timing = { ms: number; hold: number; steps: number };

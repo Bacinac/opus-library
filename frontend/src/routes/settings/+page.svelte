@@ -3,7 +3,7 @@
 	// cards, saved in one go. The accounts linked with other services live here
 	// too — settings that are not a field but a session with another service.
 
-	import { t, type MessageKey } from '$lib/i18n';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		Button,
 		Card,
@@ -13,11 +13,11 @@
 		formatBytes,
 		request,
 		toasts
-	} from '$lib/kit';
-	import { install } from '$lib/core/install.svelte';
-	import LinkedAccount from '$lib/core/LinkedAccount.svelte';
-	import type { Link } from '$lib/core/types';
-	import ChannelOrder from '$lib/music/settings/ChannelOrder.svelte';
+	} from '#lib/kit/index.js';
+	import { install } from '#lib/core/install.svelte.js';
+	import LinkedAccount from '#lib/core/LinkedAccount.svelte';
+	import type { Link } from '#lib/core/types.js';
+	import ChannelOrder from '#lib/music/settings/ChannelOrder.svelte';
 
 	// the order the cards are read in: what the whole install shares first, then
 	// each half. The token other modules call with is the account page's, not a

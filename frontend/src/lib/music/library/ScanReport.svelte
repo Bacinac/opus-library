@@ -4,10 +4,10 @@
 	// folder shows its matched/total count as a link into the artist it landed
 	// on; anything else shows why it did not land.
 
-	import { t, type MessageKey } from '$lib/i18n';
-	import { Button, Tag, formatNumber, json, request, toasts } from '$lib/kit';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { Button, Tag, formatNumber, json, request, toasts } from '#lib/kit/index.js';
 	import FolderReport from './FolderReport.svelte';
-	import type { ScanReason, ScanResult, ScanState } from '$lib/music/types';
+	import type { ScanReason, ScanResult, ScanState } from '#lib/music/types.js';
 
 	let {
 		scan,

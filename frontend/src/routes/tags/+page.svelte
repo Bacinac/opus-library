@@ -10,8 +10,8 @@
 	// there to be turned on.
 
 	import { onMount } from 'svelte';
-	import { Button, Latest, PageHead, Picks, SearchBox, formatNumber, plural, request } from '$lib/kit';
-	import { t } from '$lib/i18n';
+	import { Button, Latest, PageHead, Picks, SearchBox, formatNumber, plural, request } from '#lib/kit/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	type Row = {
 		id: number;

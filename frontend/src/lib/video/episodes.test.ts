@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.js';
 import { aired, countsOf, localDay, marksOf, type EpisodeRow } from './episodes';
 
 let next = 0;

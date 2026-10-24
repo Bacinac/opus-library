@@ -5,12 +5,12 @@
 	// its cell to the tracklist the page renders into it.
 
 	import type { Snippet } from 'svelte';
-	import { t, type MessageKey } from '$lib/i18n';
-	import { ArmedButton, Button, Progress, Tag, formatDate, formatNumber } from '$lib/kit';
-	import { heldQuality } from '$lib/music/quality';
-	import { partial } from '$lib/music/releases';
-	import { BUSY } from '$lib/music/status';
-	import type { Release, ReleaseTracks, ReleaseVariant } from '$lib/music/types';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { ArmedButton, Button, Progress, Tag, formatDate, formatNumber } from '#lib/kit/index.js';
+	import { heldQuality } from '#lib/music/quality.js';
+	import { partial } from '#lib/music/releases.js';
+	import { BUSY } from '#lib/music/status.js';
+	import type { Release, ReleaseTracks, ReleaseVariant } from '#lib/music/types.js';
 
 	let {
 		releases,

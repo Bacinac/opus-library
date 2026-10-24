@@ -7,7 +7,7 @@
 // in it — without anyone switching anything off.
 
 import { untrack } from 'svelte';
-import { keep, recall, request } from '$lib/kit';
+import { keep, recall, request } from '#lib/kit/index.js';
 import type { MediaType } from './types';
 
 const REMEMBERED = 'opus.library.type';

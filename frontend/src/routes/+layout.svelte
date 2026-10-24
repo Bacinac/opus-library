@@ -2,10 +2,10 @@
 	import '../app.css';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Toasts, onUnauthorized } from '$lib/kit';
-	import { Login, Shell, icons, me } from '$lib/opus';
-	import { t } from '$lib/i18n';
-	import { MODULE, MODULES } from '$lib/core/modules';
+	import { Toasts, onUnauthorized } from '#lib/kit/index.js';
+	import { Login, Shell, icons, me } from '#lib/opus/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { MODULE, MODULES } from '#lib/core/modules.js';
 
 	let { children } = $props();
 

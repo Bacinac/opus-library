@@ -1,5 +1,5 @@
-import { t } from '$lib/i18n';
-import { formatNumber } from '$lib/kit';
+import { t } from '#lib/i18n/index.js';
+import { formatNumber } from '#lib/kit/index.js';
 import type { OfferedQuality, Quality } from './types';
 
 /** What the files of a release on the shelf are, as a collector reads it. */

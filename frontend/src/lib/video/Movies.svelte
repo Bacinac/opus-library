@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t, type MessageKey } from '$lib/i18n';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		Button,
@@ -11,15 +11,15 @@
 		toasts,
 		withLang,
 		hold
-	} from '$lib/kit';
+	} from '#lib/kit/index.js';
 	import {
 		MediaHead,
 		videoStateMark,
 		StateMark
-	} from '$lib/opus';
-	import Poster from '$lib/video/Poster.svelte';
-	import ReleasePicker from '$lib/video/ReleasePicker.svelte';
-	import { subtitleLangs } from '$lib/video/langs.svelte';
+	} from '#lib/opus/index.js';
+	import Poster from '#lib/video/Poster.svelte';
+	import ReleasePicker from '#lib/video/ReleasePicker.svelte';
+	import { subtitleLangs } from '#lib/video/langs.svelte.js';
 
 	type Sub = { lang: string; source: string; forced: boolean; auto: boolean };
 	type File = {

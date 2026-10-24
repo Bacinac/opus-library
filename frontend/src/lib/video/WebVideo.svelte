@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		Button,
@@ -12,11 +12,11 @@
 		request,
 		toasts,
 		type Stat
-	} from '$lib/kit';
+	} from '#lib/kit/index.js';
 	import {
 		videoStateMark,
 		StateMark
-	} from '$lib/opus';
+	} from '#lib/opus/index.js';
 
 	type Channel = { id: number; url: string; title: string; monitored: boolean };
 	type Video = {

@@ -3,9 +3,9 @@
 	// cannot be shown again; what can be done with one already out is to
 	// withdraw it.
 
-	import { ArmedButton, formatDate, plural, request, toasts } from '$lib/kit';
-	import { tileOf } from '$lib/opus';
-	import { t } from '$lib/i18n';
+	import { ArmedButton, formatDate, plural, request, toasts } from '#lib/kit/index.js';
+	import { tileOf } from '#lib/opus/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	type Share = {
 		id: number;

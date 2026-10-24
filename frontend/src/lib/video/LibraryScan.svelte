@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t, type MessageKey } from '$lib/i18n';
-	import { Button, Heading, Progress, Stats, Tag, formatNumber, json, request, toasts, type Stat } from '$lib/kit';
-	import { Job } from '$lib/core/job.svelte';
-	import ResolveMatch from '$lib/video/ResolveMatch.svelte';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { Button, Heading, Progress, Stats, Tag, formatNumber, json, request, toasts, type Stat } from '#lib/kit/index.js';
+	import { Job } from '#lib/core/job.svelte.js';
+	import ResolveMatch from '#lib/video/ResolveMatch.svelte';
 
 	type Result = { file: string; path: string; outcome: string; guessed?: string; series?: string };
 	type ScanState = {

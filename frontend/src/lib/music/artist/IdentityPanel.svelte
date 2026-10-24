@@ -4,9 +4,9 @@
 	// guessed here — linking only re-queues enrichment, the page reads the
 	// result on its next load.
 
-	import { t } from '$lib/i18n';
-	import { Button, Latest, Notice, SearchBox, json, request, toasts } from '$lib/kit';
-	import type { Candidate } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { Button, Latest, Notice, SearchBox, json, request, toasts } from '#lib/kit/index.js';
+	import type { Candidate } from '#lib/music/types.js';
 
 	let { artistId }: { artistId: number } = $props();
 

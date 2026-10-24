@@ -5,8 +5,8 @@
 	// than the button that wipes every one of them.
 
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { ArmedButton, PageHead, formatNumber, plural, request, toasts } from '$lib/kit';
+	import { t } from '#lib/i18n/index.js';
+	import { ArmedButton, PageHead, formatNumber, plural, request, toasts } from '#lib/kit/index.js';
 
 	type Row = {
 		release_id: number;

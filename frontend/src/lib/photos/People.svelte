@@ -9,7 +9,7 @@
 	// So this crosses the windows the clustering would not, and proposes rather
 	// than decides. A row is a claim; naming it is the answer.
 
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		Button,
@@ -19,13 +19,13 @@
 		plural,
 		request,
 		Tag
-	} from '$lib/kit';
+	} from '#lib/kit/index.js';
 	import {
 		cropOf,
 		me
-	} from '$lib/opus';
+	} from '#lib/opus/index.js';
 	import { known } from './known.svelte';
-	import { unlessRegrouping } from '$lib/opus/photos';
+	import { unlessRegrouping } from '#lib/opus/photos.js';
 	import Transformation from './Transformation.svelte';
 
 	type Era = {

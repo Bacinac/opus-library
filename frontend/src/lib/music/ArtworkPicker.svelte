@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { Button, Dialog, formatNumber, request, toasts } from '$lib/kit';
-	import type { ArtworkImage } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { Button, Dialog, formatNumber, request, toasts } from '#lib/kit/index.js';
+	import type { ArtworkImage } from '#lib/music/types.js';
 
 	let {
 		entity,

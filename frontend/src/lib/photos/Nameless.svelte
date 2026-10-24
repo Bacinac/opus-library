@@ -13,9 +13,9 @@
 	// through the frame at a wedding. What is worth a screen is the other end —
 	// somebody who turns up twenty times in a family archive is not a passer-by.
 
-	import { t } from '$lib/i18n';
-	import { Latest, Picks, formatNumber, request } from '$lib/kit';
-	import { cropOf } from '$lib/opus';
+	import { t } from '#lib/i18n/index.js';
+	import { Latest, Picks, formatNumber, request } from '#lib/kit/index.js';
+	import { cropOf } from '#lib/opus/index.js';
 
 	let { onopen }: { onopen?: (clusterId: number) => void } = $props();
 

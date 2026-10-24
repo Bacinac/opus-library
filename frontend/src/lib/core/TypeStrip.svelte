@@ -5,8 +5,8 @@
 	// A wall of artists and a grid of posters are not one view with different
 	// pictures, and pretending they are is how a merge ruins both halves.
 
-	import { Tabs } from '$lib/kit';
-	import { t } from '$lib/i18n';
+	import { Tabs } from '#lib/kit/index.js';
+	import { t } from '#lib/i18n/index.js';
 	import { install } from './install.svelte';
 	import type { MediaType } from './types';
 

@@ -10,7 +10,7 @@
 	// album. Each row is read in its own half's vocabulary, and acted on through
 	// its own half's endpoints.
 
-	import { t, type MessageKey } from '$lib/i18n';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		PageActions,
@@ -20,9 +20,9 @@
 		formatNumber,
 		request,
 		toasts
-	} from '$lib/kit';
-	import type { Kind } from '$lib/opus';
-	import type { MediaType, QueueRow } from '$lib/core/types';
+	} from '#lib/kit/index.js';
+	import type { Kind } from '#lib/opus/index.js';
+	import type { MediaType, QueueRow } from '#lib/core/types.js';
 
 	let rows = $state<QueueRow[]>([]);
 	let loaded = $state(false);

@@ -6,8 +6,8 @@
 	// to it: name it, date the person, throw it away.
 
 	import { untrack } from 'svelte';
-	import PhotoViewer from '$lib/opus/PhotoViewer.svelte';
-	import { t } from '$lib/i18n';
+	import PhotoViewer from '#lib/opus/PhotoViewer.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
 		Button,
@@ -18,14 +18,14 @@
 		json,
 		plural,
 		request
-	} from '$lib/kit';
+	} from '#lib/kit/index.js';
 	import {
 		aboutOf,
 		cropOf,
 		me
-	} from '$lib/opus';
+	} from '#lib/opus/index.js';
 	import { known } from './known.svelte';
-	import { regrouping, unlessRegrouping } from '$lib/opus/photos';
+	import { regrouping, unlessRegrouping } from '#lib/opus/photos.js';
 
 	type Face = {
 		id: number;

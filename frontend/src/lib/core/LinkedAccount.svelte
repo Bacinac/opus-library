@@ -3,9 +3,9 @@
 	// service's own page rather than by typing a password here.
 
 	import { onDestroy } from 'svelte';
-	import { t, type MessageKey } from '$lib/i18n';
-	import { ArmedButton, Button, Card, request, toasts } from '$lib/kit';
-	import type { Link } from '$lib/core/types';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { ArmedButton, Button, Card, request, toasts } from '#lib/kit/index.js';
+	import type { Link } from '#lib/core/types.js';
 
 	let { link, onchanged }: { link: Link; onchanged: (link: Link) => void } = $props();
 

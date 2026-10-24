@@ -2,7 +2,7 @@
 // what a file's subtitle is measured against, rather than two languages
 // written into a screen.
 
-import { request } from '$lib/kit';
+import { request } from '#lib/kit/index.js';
 
 type Setting = { key: string; value: string };
 

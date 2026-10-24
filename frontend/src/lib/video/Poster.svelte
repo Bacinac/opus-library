@@ -2,8 +2,8 @@
 	// One film on a wall of films: the poster, its name, its year, and the mark
 	// of its state when it is not simply on the shelf.
 
-	import { type TagTone } from '$lib/kit';
-	import { StateMark } from '$lib/opus';
+	import { type TagTone } from '#lib/kit/index.js';
+	import { StateMark } from '#lib/opus/index.js';
 
 	let {
 		title,

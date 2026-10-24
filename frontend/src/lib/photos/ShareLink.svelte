@@ -3,8 +3,8 @@
 	// The library keeps only a digest of the key, so the address exists on this
 	// screen and nowhere else: it is handed on from here or not at all.
 
-	import { Button, Dialog, Picks, json, plural, request, toasts } from '$lib/kit';
-	import { t } from '$lib/i18n';
+	import { Button, Dialog, Picks, json, plural, request, toasts } from '#lib/kit/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	let {
 		photos,

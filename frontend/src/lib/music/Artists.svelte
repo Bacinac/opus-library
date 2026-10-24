@@ -4,20 +4,20 @@
 	// buttons that start work. The wall, the banners, the folder list and the
 	// report only draw what it holds.
 
-	import { t } from '$lib/i18n';
-	import { Button, Stats, formatNumber, request, toasts, type Stat } from '$lib/kit';
-	import { Job } from '$lib/core/job.svelte';
-	import ArtistGrid from '$lib/music/library/ArtistGrid.svelte';
-	import ScanProgress from '$lib/music/library/ScanProgress.svelte';
-	import ScanReport from '$lib/music/library/ScanReport.svelte';
-	import UnmatchedFolders from '$lib/music/library/UnmatchedFolders.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { Button, Stats, formatNumber, request, toasts, type Stat } from '#lib/kit/index.js';
+	import { Job } from '#lib/core/job.svelte.js';
+	import ArtistGrid from '#lib/music/library/ArtistGrid.svelte';
+	import ScanProgress from '#lib/music/library/ScanProgress.svelte';
+	import ScanReport from '#lib/music/library/ScanReport.svelte';
+	import UnmatchedFolders from '#lib/music/library/UnmatchedFolders.svelte';
 	import type {
 		ArtistSummary,
 		EnrichState,
 		MusicStats,
 		ScanState,
 		UnmatchedFolder
-	} from '$lib/music/types';
+	} from '#lib/music/types.js';
 
 	let artists = $state<ArtistSummary[]>([]);
 	let loaded = $state(false);

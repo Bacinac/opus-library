@@ -3,8 +3,8 @@
 	// is sorted by the alphabet the names file under, and the rail reads the
 	// same alphabet, so a letter always has a card to go to.
 
-	import { Letters, compareHr, initialOf, lettersOf } from '$lib/kit';
-	import type { ArtistSummary } from '$lib/music/types';
+	import { Letters, compareHr, initialOf, lettersOf } from '#lib/kit/index.js';
+	import type { ArtistSummary } from '#lib/music/types.js';
 
 	let { artists }: { artists: ArtistSummary[] } = $props();
 

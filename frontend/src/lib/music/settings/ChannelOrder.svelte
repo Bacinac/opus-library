@@ -5,8 +5,8 @@
 	// name is dropped and a missing one appended — so the list always shows
 	// every channel exactly once whatever is in the setting.
 
-	import { t, type MessageKey } from '$lib/i18n';
-	import { Button } from '$lib/kit';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { Button } from '#lib/kit/index.js';
 
 	let { value = $bindable(), channels }: { value: string; channels: string[] } = $props();
 

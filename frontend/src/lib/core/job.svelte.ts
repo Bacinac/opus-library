@@ -4,8 +4,8 @@
 // of a scan follows it to the end instead of showing a bar that never moves.
 
 import { untrack } from 'svelte';
-import { request, toasts } from '$lib/kit';
-import { t, type MessageKey } from '$lib/i18n';
+import { request, toasts } from '#lib/kit/index.js';
+import { t, type MessageKey } from '#lib/i18n/index.js';
 
 type Running = { running: boolean };
 

@@ -5,7 +5,7 @@
 	// and the tracklist only draw and report back.
 
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Button,
 		Latest,
@@ -15,17 +15,17 @@
 		plural,
 		request,
 		toasts
-	} from '$lib/kit';
-	import ArtworkPicker from '$lib/music/ArtworkPicker.svelte';
-	import AliasesDialog from '$lib/music/artist/AliasesDialog.svelte';
-	import ArtistHeader from '$lib/music/artist/ArtistHeader.svelte';
-	import CandidatePicker from '$lib/music/artist/CandidatePicker.svelte';
-	import IdentityPanel from '$lib/music/artist/IdentityPanel.svelte';
-	import ReleaseTable from '$lib/music/artist/ReleaseTable.svelte';
-	import TrackList from '$lib/music/artist/TrackList.svelte';
-	import { isMain, mainShelf } from '$lib/music/releases';
-	import { BUSY } from '$lib/music/status';
-	import type { ArtistDetail, Release, ReleaseTracks, TrackRow } from '$lib/music/types';
+	} from '#lib/kit/index.js';
+	import ArtworkPicker from '#lib/music/ArtworkPicker.svelte';
+	import AliasesDialog from '#lib/music/artist/AliasesDialog.svelte';
+	import ArtistHeader from '#lib/music/artist/ArtistHeader.svelte';
+	import CandidatePicker from '#lib/music/artist/CandidatePicker.svelte';
+	import IdentityPanel from '#lib/music/artist/IdentityPanel.svelte';
+	import ReleaseTable from '#lib/music/artist/ReleaseTable.svelte';
+	import TrackList from '#lib/music/artist/TrackList.svelte';
+	import { isMain, mainShelf } from '#lib/music/releases.js';
+	import { BUSY } from '#lib/music/status.js';
+	import type { ArtistDetail, Release, ReleaseTracks, TrackRow } from '#lib/music/types.js';
 
 	let artist = $state<ArtistDetail | null>(null);
 	let picker = $state<{ entity: 'artists' | 'releases'; id: number; title: string } | null>(null);

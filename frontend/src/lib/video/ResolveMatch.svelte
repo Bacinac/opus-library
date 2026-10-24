@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { Dialog, Latest, SearchBox, Tag, json, request, toasts } from '$lib/kit';
+	import { t } from '#lib/i18n/index.js';
+	import { Dialog, Latest, SearchBox, Tag, json, request, toasts } from '#lib/kit/index.js';
 
 	type Result = {
 		tmdb_id: number;

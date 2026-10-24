@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { Button } from '$lib/kit';
+	import { t } from '#lib/i18n/index.js';
+	import { Button } from '#lib/kit/index.js';
 
 	let {
 		items,

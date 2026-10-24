@@ -1,7 +1,7 @@
 // Everybody the photographs have a name for, asked once and shared by the
 // screens that name, date and look up people.
 
-import { request } from '$lib/kit';
+import { request } from '#lib/kit/index.js';
 
 export type Known = {
 	id: number;

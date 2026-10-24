@@ -4,10 +4,10 @@
 	// title, and the files under the folder that matched no track. Every write
 	// is the page's — this view only says which row it happened on.
 
-	import { t } from '$lib/i18n';
-	import { ArmedButton, Button, duration, formatNumber } from '$lib/kit';
-	import { sameTitle } from '$lib/music/releases';
-	import type { ReleaseTracks, TrackRow } from '$lib/music/types';
+	import { t } from '#lib/i18n/index.js';
+	import { ArmedButton, Button, duration, formatNumber } from '#lib/kit/index.js';
+	import { sameTitle } from '#lib/music/releases.js';
+	import type { ReleaseTracks, TrackRow } from '#lib/music/types.js';
 
 	let {
 		releaseId,
