@@ -8,7 +8,9 @@ async def _shelf(query: str) -> list[str]:
         session.add_all([Artist(id=1, name="Azra", monitored=True),
                          Artist(id=2, name="Bijelo Dugme", monitored=True),
                          Artist(id=3, name="Šarlo Akrobata", monitored=True),
-                         Artist(id=4, name="Haustor", monitored=False)])
+                         Artist(id=4, name="Haustor", monitored=False),
+                         Artist(id=5, name="The Doors", monitored=True),
+                         Artist(id=6, name="Đorđe Balašević", monitored=True)])
         await session.commit()
     async with library(await signed_in("boss")) as client:
         got = await client.get(f"/api/music/artists{query}")
@@ -17,7 +19,7 @@ async def _shelf(query: str) -> list[str]:
 
 
 def test_the_whole_shelf_is_everybody_followed(clean):
-    assert run(_shelf("")) == ["Azra", "Bijelo Dugme", "Šarlo Akrobata"]
+    assert run(_shelf("")) == ["Azra", "Bijelo Dugme", "The Doors", "Đorđe Balašević", "Šarlo Akrobata"]
 
 
 def test_only_the_artists_named(clean):

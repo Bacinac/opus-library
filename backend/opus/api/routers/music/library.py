@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from opus_core.names import croatian
 from pydantic import BaseModel
 import sqlalchemy as sa
 from sqlalchemy import and_, any_, bindparam, delete as sql_delete, func, or_, select
@@ -288,8 +289,9 @@ async def search(q: str, session: AsyncSession = Depends(get_session)):
 
     async def on_the_shelf():
         shelf = (await session.execute(
-            select(Artist.id, Artist.name).where(Artist.monitored).order_by(Artist.name))).all()
-        artists = [artist_id for artist_id, name in shelf if answers(words, name)]
+            select(Artist.id, Artist.name).where(Artist.monitored))).all()
+        artists = [artist_id for artist_id, name in sorted(shelf, key=lambda row: croatian(row[1]))
+                   if answers(words, name)]
         tracks = await search_library(words, 30, session)
         held = (await session.execute(
             select(Artist.name, Release.title).join(Release.artist)

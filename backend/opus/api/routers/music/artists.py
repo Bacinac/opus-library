@@ -10,6 +10,7 @@ import math
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from opus_core.names import croatian
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -386,7 +387,9 @@ async def list_artists(ids: str | None = None, session: AsyncSession = Depends(g
     # By name, though films and series come back newest first: every artist here
     # carries the same arrival date, because they came in one migration, so
     # "newest" resolves to the tiebreak and the shelf opens on Š, Š, Š, Đ, Đ.
-    result = await session.execute(shelf.order_by(Artist.name))
+    # And by name as the alphabet is recited, not as the database collates it,
+    # because every screen that shows this shelf shows it in this order
+    artists = sorted((await session.execute(shelf)).scalars(), key=lambda a: croatian(a.name))
     counts = dict((await session.execute(
         select(Release.artist_id, func.count(Release.id)).group_by(Release.artist_id)
     )).all())
@@ -413,7 +416,7 @@ async def list_artists(ids: str | None = None, session: AsyncSession = Depends(g
          "releases": counts.get(a.id, 0), "held": held.get(a.id, 0),
          "blurb": _blurb(a.bio),
          "backdrop_url": wide.get(a.id)}
-        for a in result.scalars()
+        for a in artists
     ]
 
 
@@ -541,20 +544,19 @@ async def _line_up(session, artist_id: int) -> tuple[list[dict], list[dict]]:
         .join(ArtistRelation, ArtistRelation.artist_id == Artist.id)
         .where(ArtistRelation.related_artist_id == artist_id,
                ArtistRelation.relation == "member_of")
-        .order_by(Artist.name)
     )).scalars().all()
     groups = (await session.execute(
         select(Artist)
         .join(ArtistRelation, ArtistRelation.related_artist_id == Artist.id)
         .where(ArtistRelation.artist_id == artist_id,
                ArtistRelation.relation == "member_of")
-        .order_by(Artist.name)
     )).scalars().all()
     return _related(members), _related(groups)
 
 
 def _related(rows) -> list[dict]:
-    return [{"id": a.id, "name": a.name, "monitored": a.monitored} for a in rows]
+    return [{"id": a.id, "name": a.name, "monitored": a.monitored}
+            for a in sorted(rows, key=lambda a: croatian(a.name))]
 
 
 def _artist_links(artist: Artist) -> list[dict]:
