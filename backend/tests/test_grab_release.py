@@ -147,20 +147,33 @@ def test_a_grab_walks_the_channels_until_one_carries_the_album(grab):
                           {"job": "user2:Record", "mode": "full", "multi_album": False}, 70)]
 
 
-def test_a_dead_source_is_skipped_but_usenet_only_loses_its_spent_posts(grab):
+def test_a_recovery_skips_a_dead_source_but_usenet_only_loses_its_spent_posts(grab):
     release_id = run(_release(("slskd", MusicDownloadStatus.FAILED, None),
                               ("sabnzbd", MusicDownloadStatus.REJECTED, "Somebody-Record-Old"),
                               ("sabnzbd", MusicDownloadStatus.COMPLETE, "Somebody-Record-Good")))
     grab.channel("slskd", post("slskd", "user:Record"))
     grab.channel("sabnzbd", post("sabnzbd", "Somebody-Record-Old"),
-                 post("sabnzbd", "Somebody-Record-Good"), partial=False)
+                 post("sabnzbd", "Somebody-Record-New"), partial=False)
 
-    status, downloads = _grab(release_id)
+    status, downloads = _grab(release_id, "replace")
 
     assert grab.searched() == ["sabnzbd"]
     assert status == ReleaseStatus.DOWNLOADING
     assert [(d[0], d[2]["job"], d[2]["mode"]) for d in downloads] == [
-        ("sabnzbd", "Somebody-Record-Good", "full")]
+        ("sabnzbd", "Somebody-Record-New", "replace")]
+
+
+def test_a_person_asking_again_has_a_dead_source_asked_again(grab):
+    release_id = run(_release(("slskd", MusicDownloadStatus.FAILED, None),
+                              ("sabnzbd", MusicDownloadStatus.REJECTED, "Somebody-Record-Old")))
+    grab.channel("slskd", post("slskd", "user:Record"))
+    grab.channel("sabnzbd", post("sabnzbd", "Somebody-Record-Old"))
+
+    status, downloads = _grab(release_id)
+
+    assert grab.searched() == ["slskd"]
+    assert status == ReleaseStatus.DOWNLOADING
+    assert [(d[0], d[2]["job"]) for d in downloads] == [("slskd", "user:Record")]
 
 
 def test_a_recovery_asks_whole_album_channels_first_for_a_post_not_yet_pulled(grab):

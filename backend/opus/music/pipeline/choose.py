@@ -222,7 +222,7 @@ async def brief(release_id: int, automatic: bool) -> _Brief | None:
             artist_name=artist.name, album_title=release.title,
             track_titles=[t.title for t in tracks],
             config=await current_runtime(),
-            failed_channels=await _failed_channels(session, release_id),
+            failed_channels=await _failed_channels(session, release_id) if automatic else set(),
             tried_nzb_titles=await _tried_nzb_titles(session, release_id, automatic),
             download_count=(await session.execute(
                 select(func.count()).select_from(MusicDownload)
@@ -233,8 +233,10 @@ async def brief(release_id: int, automatic: bool) -> _Brief | None:
 
 async def _failed_channels(session, release_id: int) -> set[str]:
     # a channel whose earlier download for THIS release failed (e.g. a store
-    # has only lossy AAC for the album) is skipped so the grab falls
-    # through to the next source instead of retrying the dead one
+    # has only lossy AAC for the album) is skipped so the automatic recovery
+    # falls through to the next source instead of retrying the dead one. A
+    # person asking again is asking for exactly that retry: a store's one
+    # throttled night had a user's grab asking everyone but the store
     failed = {
         row[0] for row in (await session.execute(
             select(MusicDownload.channel).where(
