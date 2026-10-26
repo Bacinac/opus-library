@@ -11,7 +11,8 @@ from sqlalchemy.dialects.postgresql import insert
 from conftest import library, run, signed_in
 from opus import acquire, db, importing
 from opus.acquire import AcquireError, JobStatus
-from opus.models import Episode, Movie, Season, Series, Setting, Subtitle, VideoDownload, VideoFile
+from opus.models import (DeadPost, Episode, Movie, Season, Series, Setting, Subtitle, VideoDownload,
+                         VideoFile)
 from opus.settings_store import RuntimeConfig, current_runtime
 from opus.video.metadata import tmdb
 from opus.video.pipeline import download, grab, importer, monitor, score, search
@@ -58,6 +59,11 @@ async def _row(download_id: int) -> VideoDownload:
         return await session.get(VideoDownload, download_id)
 
 
+async def _dead_posts() -> list[str]:
+    async with db.SessionLocal() as session:
+        return list((await session.execute(select(DeadPost.guid))).scalars())
+
+
 async def _setting(key: str, value: str) -> None:
     async with db.SessionLocal() as session:
         await session.execute(insert(Setting).values(key=key, value=value))
@@ -97,7 +103,11 @@ def poll(clean, monkeypatch, caplog):
             run(download.poll_downloads_loop())
         assert "download poll loop iteration failed" not in caplog.text
 
-    return SimpleNamespace(statuses=statuses, dropped=dropped, replaced=replaced, once=once)
+    def drop_with(answer):
+        monkeypatch.setattr(acquire, "drop", answer)
+
+    return SimpleNamespace(statuses=statuses, dropped=dropped, replaced=replaced, once=once,
+                           drop_with=drop_with)
 
 
 def test_progress_moves_a_queued_job_and_a_started_one_becomes_downloading(poll):
@@ -135,6 +145,45 @@ def test_a_job_forgotten_past_the_grace_fails_and_the_next_release_is_asked_for(
     row = run(_row(lost))
     assert (row.state, row.detail) == ("failed", "sabnzbd lost the job: OPUS has no such job")
     assert poll.replaced == [lost]
+
+
+def test_a_job_still_at_nothing_inside_the_stall_grace_is_left_downloading(poll):
+    film = run(_film())
+    fresh = run(_download(film, state="downloading", created_at=ago(acquire.STALLED_GRACE - HOUR)))
+    poll.statuses["j1"] = JobStatus("downloading", progress=0.0, detail="metaDL — 0 seeds")
+    poll.once()
+
+    row = run(_row(fresh))
+    assert (row.state, row.detail) == ("downloading", "metaDL — 0 seeds")
+    assert poll.dropped == [] and poll.replaced == []
+
+
+def test_a_job_still_at_nothing_past_the_grace_is_dropped_buried_and_replaced(poll):
+    film = run(_film())
+    dead = run(_download(film, state="downloading", release_guid="g-dead",
+                         created_at=ago(acquire.STALLED_GRACE + HOUR)))
+    poll.statuses["j1"] = JobStatus("downloading", progress=0.0, detail="metaDL — 0 seeds")
+    poll.once()
+
+    row = run(_row(dead))
+    assert (row.state, row.detail) == ("failed", "nothing came in 24 h: metaDL — 0 seeds")
+    assert poll.dropped == [{"job": "j1"}] and poll.replaced == [dead]
+    assert run(_dead_posts()) == ["g-dead"]
+
+
+def test_a_stalled_job_the_client_would_not_drop_waits_for_the_next_poll(poll):
+    film = run(_film())
+    dead = run(_download(film, state="downloading", created_at=ago(acquire.STALLED_GRACE + HOUR)))
+    poll.statuses["j1"] = JobStatus("downloading", progress=0.0, detail="metaDL — 0 seeds")
+
+    async def refusing(config, job_ref):
+        raise AcquireError("OPUS unreachable dropping job j1")
+    poll.drop_with(refusing)
+    poll.once()
+
+    row = run(_row(dead))
+    assert (row.state, row.detail) == ("downloading", "OPUS unreachable dropping job j1")
+    assert poll.replaced == []
 
 
 def test_a_failed_job_fails_its_row_with_the_reason(poll):

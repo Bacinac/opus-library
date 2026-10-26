@@ -135,10 +135,22 @@ async def poll_downloads_loop():
                         await session.commit()
                         continue
                     lost = acquire.unaccounted_for(status, dl.created_at)
+                    stalled = acquire.stalled(status, dl.created_at)
+                    if stalled:
+                        # the client would keep the job for ever; a drop that
+                        # fails leaves the row for the next poll to try again
+                        try:
+                            await acquire.drop(config, dl.job_ref)
+                        except AcquireError as exc:
+                            dl.detail = str(exc)
+                            await session.commit()
+                            continue
                     dl.progress = status.progress
                     dl.detail = (f"{dl.channel} lost the job: {status.detail}" if lost
+                                 else f"nothing came in {acquire.STALLED_GRACE.total_seconds() / 3600:g} h: "
+                                      f"{status.detail}" if stalled
                                  else status.detail)
-                    if status.state == "failed" or lost:
+                    if status.state == "failed" or lost or stalled:
                         dl.state = "failed"
                         await grab.bury(session, dl)
                         await session.commit()

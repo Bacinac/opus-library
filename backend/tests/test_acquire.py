@@ -251,3 +251,14 @@ def test_only_a_job_unknown_past_its_grace_is_unaccounted_for():
     assert acquire.unaccounted_for(unknown, now - acquire.UNACCOUNTED_GRACE * 2)
     assert not acquire.unaccounted_for(acquire.JobStatus("queued"),
                                        now - acquire.UNACCOUNTED_GRACE * 2)
+
+
+def test_only_a_job_still_at_nothing_past_its_grace_is_stalled():
+    now = datetime.datetime.now(datetime.UTC)
+    idle = acquire.JobStatus("downloading", progress=0.0, detail="metaDL — 0 seeds")
+    assert not acquire.stalled(idle, now - acquire.STALLED_GRACE / 2)
+    assert acquire.stalled(idle, now - acquire.STALLED_GRACE * 2)
+    assert acquire.stalled(acquire.JobStatus("queued"), now - acquire.STALLED_GRACE * 2)
+    assert not acquire.stalled(acquire.JobStatus("downloading", progress=0.01),
+                               now - acquire.STALLED_GRACE * 2)
+    assert not acquire.stalled(acquire.JobStatus("unknown"), now - acquire.STALLED_GRACE * 2)

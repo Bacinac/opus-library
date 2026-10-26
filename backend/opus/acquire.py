@@ -30,6 +30,11 @@ APP = "library"
 # failed: right after a grab there is a window where the job is not visible yet
 UNACCOUNTED_GRACE = timedelta(minutes=10)
 
+# how long a job may sit at nothing before its post is given up on: a torrent
+# nobody seeds is "downloading" in the client's eyes for ever, and kept the
+# episode it was for off the next release for days
+STALLED_GRACE = timedelta(hours=24)
+
 
 class AcquireError(Exception):
     """Raised on any failure to acquire. Never swallowed — fail loud."""
@@ -165,6 +170,11 @@ async def job_status(config, job_ref: dict) -> JobStatus:
 def unaccounted_for(status: JobStatus, since: datetime) -> bool:
     return (status.state == "unknown"
             and datetime.now(timezone.utc) - since > UNACCOUNTED_GRACE)
+
+
+def stalled(status: JobStatus, since: datetime) -> bool:
+    return (status.state in ("queued", "downloading") and status.progress <= 0
+            and datetime.now(timezone.utc) - since > STALLED_GRACE)
 
 
 async def drop(config, job_ref: dict) -> None:
