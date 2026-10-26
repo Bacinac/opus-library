@@ -69,6 +69,7 @@ PLAYER = [
     ("GET", "/api/photos/onthisday"),
     ("GET", "/api/photos/years"),
     ("GET", "/api/photos/people"),
+    ("GET", "/api/photos/people/company"),
     ("GET", "/api/photos/places"),
     ("GET", "/api/photos/draw"),
     ("GET", f"/api/photos/{CHECKSUM}"),

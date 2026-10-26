@@ -6,6 +6,9 @@ photographs that are known to carry a particular fact — who is in them, where
 they were taken, when — because a question can only be asked of a picture whose
 answer the library actually holds.
 
+A group is drawn as well: everybody in it named, so that one of them can be
+taken out and asked for.
+
 The drawing happens here and not in the caller. Which of forty thousand rows
 know a fact is a question about the catalogue, and a caller that fetched pages
 until it had enough would be reading the whole library to play one round."""
@@ -43,6 +46,15 @@ RECOGNISABLE = 0.831
 EASIEST = 0.938
 HARDEST = 0.700
 
+# How wide a face has to be, as a share of the picture, for it to be the one
+# taken out of a group. Smaller than this and covering it changes nothing
+# anybody would have noticed. Measured: of the photographs with two to six
+# named people and nobody unnamed, 4,089 have such a face.
+HIDEABLE = 0.08
+# how many named people a group is. One is a portrait; past six the one taken
+# out is one face in a crowd.
+GROUP = (2, 6)
+
 KNOWS = {
     "person": """
         p.id IN (SELECT f.photo_id FROM photo_faces f
@@ -51,13 +63,22 @@ KNOWS = {
                  HAVING count(DISTINCT f.person_id) = 1
                     AND max(f.score) < :hard)
     """,
+    # a group, with everybody in it named and at least one of them wide enough
+    # to be taken out: one unnamed face and the one missing could be them
+    "group": """
+        p.id IN (SELECT f.photo_id FROM photo_faces f
+                  GROUP BY f.photo_id
+                 HAVING count(*) FILTER (WHERE f.person_id IS NULL) = 0
+                    AND count(DISTINCT f.person_id) BETWEEN :group_least AND :group_most
+                    AND max(f.w) >= :hideable)
+    """,
     "place": "p.place <> ''",
     "date": "p.taken_source = 'exif'",
 }
 
 
 @router.get("/draw")
-async def draw(knows: str = Query("date", pattern="^(person|place|date)$"),
+async def draw(knows: str = Query("date", pattern="^(person|group|place|date)$"),
                hard: float = Query(RECOGNISABLE, ge=HARDEST, le=EASIEST),
                count: int = Query(12, ge=1, le=60),
                session=Depends(get_session)):
@@ -79,8 +100,8 @@ async def draw(knows: str = Query("date", pattern="^(person|place|date)$"),
           AND ({KNOWS[knows]})
         ORDER BY random()
         LIMIT :count
-    """), {"gen": derive.GENERATION, "count": count,
-           "hard": hard})).all()
+    """), {"gen": derive.GENERATION, "count": count, "hard": hard,
+           "hideable": HIDEABLE, "group_least": GROUP[0], "group_most": GROUP[1]})).all()
     if not rows:
         return {"photos": []}
 

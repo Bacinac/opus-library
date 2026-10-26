@@ -286,6 +286,25 @@ async def people(session=Depends(get_session)):
       y1, y2, cover in rows]
 
 
+@router.get("/people/company")
+async def company(session=Depends(get_session)):
+    """Who is photographed with whom: every pair of named people and how many
+    photographs hold them both.
+
+    Asked for whole rather than per person, because it is small — a few
+    thousand pairs out of forty thousand faces, twenty-five milliseconds — and
+    whoever asks wants to weigh several people against each other at once."""
+    rows = (await session.execute(text("""
+        SELECT a.person_id, b.person_id, count(DISTINCT a.photo_id)
+        FROM photo_faces a
+        JOIN photo_faces b ON b.photo_id = a.photo_id AND b.person_id > a.person_id
+        WHERE a.person_id IS NOT NULL AND b.person_id IS NOT NULL
+        GROUP BY a.person_id, b.person_id
+        ORDER BY count(DISTINCT a.photo_id) DESC
+    """))).all()
+    return [{"a": a, "b": b, "together": n} for a, b, n in rows]
+
+
 @router.get("/people/{person_id}/faces")
 async def person_faces(
     person_id: int,
