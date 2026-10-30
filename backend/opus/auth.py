@@ -76,7 +76,7 @@ OWN_ACCOUNT = ("/api/auth/password", "/api/auth/passkeys")
 #
 # Like the rule above it is a prefix and it fails closed. The words a plugin adds
 # are on every screen, a guest's too.
-GUESTS_MAY = ("/api/music", "/api/video", "/api/words")
+GUESTS_MAY = ("/api/music", "/api/video", "/api/pictures", "/api/words")
 
 
 # What the install is made of, as against what it holds. Reading the shelf is

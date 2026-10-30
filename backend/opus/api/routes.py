@@ -13,8 +13,8 @@ that would swallow concrete paths registered after it."""
 from fastapi import APIRouter
 from opus_core import plugins, revision
 
-from opus.api.routers import downloads, links, system
-from opus.api.routers.music import artists, artwork, library, releases
+from opus.api.routers import downloads, links, pictures, system
+from opus.api.routers.music import artists, artwork, library, radio, releases
 from opus.api.routers.music import downloads as music_downloads
 from opus.api.routers.photos import draw as photos_draw
 from opus.api.routers.photos import library as photos_library
@@ -34,6 +34,7 @@ router.include_router(revision.router("opus-library"))
 router.include_router(plugins.router(PLUGINS))
 router.include_router(links.router)
 router.include_router(downloads.router)
+router.include_router(pictures.router)
 for path in (path for plugin in PLUGINS for path in plugin.routes):
     router.include_router(plugins.resolve(path))
 
@@ -42,6 +43,7 @@ music.include_router(artists.router)
 music.include_router(releases.router)
 music.include_router(library.router)
 music.include_router(music_downloads.router)
+music.include_router(radio.router)
 music.include_router(artwork.router)
 router.include_router(music)
 

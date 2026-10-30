@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t } from '#lib/i18n/index.js';
 	import { Latest, SearchBox, json, request, toasts } from '#lib/kit/index.js';
 	import Found from '#lib/core/Found.svelte';
@@ -62,7 +63,7 @@
 <Found
 	items={results}
 	key={(found) => found.tmdb_id}
-	picture={(found) => ({ src: found.poster_url, alt: found.title })}
+	picture={(found) => ({ src: picture(found.poster_url, 160), alt: found.title })}
 	poster
 	onadd={add}
 >

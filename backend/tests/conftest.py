@@ -22,6 +22,7 @@ from sqlalchemy.pool import NullPool
 from opus import accounts, auth, db, settings_store
 from opus.config import settings
 from opus.photos.people import lives
+from opus.pictures import door, store
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,8 +74,13 @@ async def _empty():
 
 
 @pytest.fixture
-def clean():
+def clean(monkeypatch):
     run(_empty())
+    # the ids handed out belong to the rows just emptied, and taking a picture
+    # is a request to somebody's CDN
+    door._ids.clear()
+    store.nothing.clear()
+    monkeypatch.setattr(store, "gather_soon", lambda ids: None)
     auth.forget_roster()
     settings_store.forget_runtime()
     accounts._failures.clear()
@@ -92,6 +98,11 @@ async def library(cookie: str | None = None):
             transport=httpx.ASGITransport(app=app), base_url="http://library",
             cookies={opus_auth.SESSION_COOKIE: cookie} if cookie else None) as client:
         yield client
+
+
+def picture(source: str) -> str:
+    """The address the library hands out for a picture found at `source`."""
+    return f"/api/pictures/{run(door.ids({source}))[source]}"
 
 
 async def signed_in(name: str, role: str = "admin") -> str:

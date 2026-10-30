@@ -67,6 +67,9 @@ services:
       # the derivatives, writable and its own — which is what lets the tree
       # above stay read-only
       - derivatives:/derivatives
+      # the pictures the library draws: originals taken once from a catalogue,
+      # and the sizes made from them and from the covers beside the records
+      - artwork:/artwork
       # the private half. Writable, and the one volume here that a backup must
       # carry: for a phone that is gone, this is the only copy left.
       - vault:/vault
@@ -176,6 +179,12 @@ volumes:
       type: none
       o: bind
       device: ${OPUS_VAULT_DEVICE:-/mnt/docker/opus-library/volumes/vault}
+  artwork:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${OPUS_ARTWORK_DEVICE:-/mnt/docker/opus-library/volumes/artwork}
   derivatives:
     driver: local
     driver_opts:

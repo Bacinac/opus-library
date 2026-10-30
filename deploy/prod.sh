@@ -10,7 +10,7 @@ OPUS_MODULE=opus-library
 # whenever something else happened to recreate it
 OPUS_SERVICES=(backend frontend faces)
 OPUS_HEALTH_PORTS=(8095)
-OPUS_VOLUME_OWNER=(opus_library_backend dirs /downloads /music /movies /television /video /derivatives /vault /photos-write)
+OPUS_VOLUME_OWNER=(opus_library_backend dirs /downloads /music /movies /television /video /derivatives /artwork /vault /photos-write)
 
 source backend/opus_core/ops/deploy.sh
 opus_deploy "$@"

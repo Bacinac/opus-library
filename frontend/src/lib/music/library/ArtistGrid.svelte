@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	// The library wall: one card per artist plus the letters beside it. The wall
 	// is sorted by the alphabet the names file under, and the rail reads the
 	// same alphabet, so a letter always has a card to go to.
@@ -24,7 +25,7 @@
 	{#each sortedArtists as artist (artist.id)}
 		<a class="card" href={`/artists/${artist.id}`} data-artist={artist.id}>
 			{#if artist.image_url}
-				<img src={artist.image_url} alt={artist.name} />
+				<img src={picture(artist.image_url, 320)} alt={artist.name} />
 			{:else}
 				<div class="placeholder"></div>
 			{/if}

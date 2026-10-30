@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	// The artist's identity card: portrait, the type/country/years line, the bio,
 	// the people and the outbound links — plus the actions that re-read the
 	// artist from its sources and name what else it goes by. It draws what the
@@ -40,7 +41,7 @@
 	title={artist.name}
 	subtitle={meta}
 	overview={artist.bio ?? ''}
-	poster={artist.image_url}
+	poster={picture(artist.image_url, 480)}
 	round
 	onposter={onpickportrait}
 	posterTitle={t('artwork.artistTitle')}

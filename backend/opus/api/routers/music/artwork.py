@@ -41,4 +41,4 @@ async def choose_artwork(entity: str, entity_id: int, image_id: int,
         image = await artwork.choose(session, _artwork_entity(entity), entity_id, image_id)
     except artwork.ArtworkError as exc:
         raise HTTPException(404, str(exc))
-    return {"id": image.id, "url": image.url}
+    return {"id": image.id, "picture": image.url}

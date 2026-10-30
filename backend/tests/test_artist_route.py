@@ -2,7 +2,7 @@ import datetime
 
 from sqlalchemy.dialects.postgresql import insert
 
-from conftest import library, run, signed_in
+from conftest import library, picture, run, signed_in
 from opus import db
 from opus.models import (Artist, ArtistAlias, ArtistExternalId, ArtistRelation, Image,
                          MusicDownload, MusicDownloadStatus, MusicFile, Release, ReleaseStatus,
@@ -149,8 +149,8 @@ def test_an_artist_page_carries_everything_the_shelf_and_the_player_read(quick, 
                           "bio", "enrich_status", "links", "aliases", "members", "groups",
                           "releases"]
     assert {k: v for k, v in page.items() if k != "releases"} == {
-        "id": 1, "name": "Riblja Čorba", "image_url": "https://img/band.jpg",
-        "backdrop_url": "https://img/wide.jpg", "monitored": True, "deezer_id": 100,
+        "id": 1, "name": "Riblja Čorba", "image_url": picture("https://img/band.jpg"),
+        "backdrop_url": picture("https://img/wide.jpg"), "monitored": True, "deezer_id": 100,
         "wikidata_id": "Q1", "artist_type": "group", "country": "Serbia", "country_hr": "Srbija",
         "begin_year": 1978, "end_year": None, "bio": "A rock band.",
         "enrich_status": "resolved",
@@ -167,7 +167,8 @@ def test_an_artist_page_carries_everything_the_shelf_and_the_player_read(quick, 
         "groups": [{"id": 3, "name": "Zvezde", "monitored": True}],
     }
     assert [list(r) for r in page["releases"]] == [list(EXPECTED_RELEASES[0])] * 4
-    assert page["releases"] == EXPECTED_RELEASES
+    assert page["releases"] == [
+        {**r, "cover_url": r["cover_url"] and picture(r["cover_url"])} for r in EXPECTED_RELEASES]
 
 
 def test_every_category_shows_when_nothing_is_filtered_and_nothing_vouches(quick):

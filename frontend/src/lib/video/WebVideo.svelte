@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
@@ -129,7 +130,7 @@
 	{#each videos as video (video.id)}
 		<li>
 			{#if video.thumb_url}
-				<img src={video.thumb_url} alt={video.title} loading="lazy" />
+				<img src={picture(video.thumb_url, 480)} alt={video.title} loading="lazy" />
 			{:else}
 				<div class="placeholder"></div>
 			{/if}

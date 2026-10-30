@@ -29,12 +29,12 @@ opus_generate POSTGRES_PASSWORD:24 OPUS_SESSION_KEY:32
 opus_generate OPUS_BOOTSTRAP_KEY:32
 
 ROOT=$(pwd -P)
-for volume in downloads music movies television video photos derivatives vault; do
+for volume in downloads music movies television video photos derivatives artwork vault; do
 	mkdir -p "$ROOT/volumes/$volume"
 done
 mkdir -p "$ROOT/volumes/postgres"
 
-for mount in DOWNLOADS:downloads MUSIC:music MOVIES:movies TV:television VIDEO:video PHOTOS:photos DERIVATIVES:derivatives VAULT:vault; do
+for mount in DOWNLOADS:downloads MUSIC:music MOVIES:movies TV:television VIDEO:video PHOTOS:photos DERIVATIVES:derivatives ARTWORK:artwork VAULT:vault; do
 	key=OPUS_${mount%%:*}_DEVICE
 	value=${!key:-$(env_read "$key")}
 	env_set "$key" "${value:-$ROOT/volumes/${mount##*:}}"

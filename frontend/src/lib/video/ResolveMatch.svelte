@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { onMount } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { Dialog, Latest, SearchBox, Tag, json, request, toasts } from '#lib/kit/index.js';
@@ -82,7 +83,7 @@
 			{#each results as r (r.media_type + r.tmdb_id)}
 				<li>
 					<button class="row" onclick={() => pick(r)} disabled={picking}>
-						{#if r.poster_url}<img src={r.poster_url} alt={r.title} loading="lazy" />{:else}<div class="ph"></div>{/if}
+						{#if r.poster_url}<img src={picture(r.poster_url, 160)} alt={r.title} loading="lazy" />{:else}<div class="ph"></div>{/if}
 						<span class="info">
 							<strong>{r.title} <span class="muted">{r.year ?? ''}</span></strong>
 							<Tag kind={r.media_type === 'movie' ? 'film' : 'series'}>

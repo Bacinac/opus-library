@@ -204,7 +204,7 @@ export type UnmatchedFolder = {
 export type ArtworkImage = {
 	id: number;
 	source: string;
-	url: string;
+	picture: string | null;
 	width: number | null;
 	height: number | null;
 	chosen: boolean;

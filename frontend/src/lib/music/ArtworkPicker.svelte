@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t } from '#lib/i18n/index.js';
 	import { Button, Dialog, formatNumber, request, toasts } from '#lib/kit/index.js';
 	import type { ArtworkImage } from '#lib/music/types.js';
@@ -65,7 +66,7 @@
 		<div class="grid">
 			{#each images as image (image.id)}
 				<button class="candidate" class:chosen={image.chosen} onclick={() => choose(image)}>
-					<img src={image.url} alt={image.source} loading="lazy" />
+					<img src={picture(image.picture, 320)} alt={image.source} loading="lazy" />
 					<span class="caption">
 						{image.source}
 						{#if image.width}· {formatNumber(image.width)}×{formatNumber(image.height ?? 0)}{/if}

@@ -1,4 +1,4 @@
-from conftest import library, run, signed_in
+from conftest import library, picture, run, signed_in
 from opus import db
 from opus.api.routers.music import library as music_library
 from opus.models import Artist, MusicFile, Release, Track
@@ -57,7 +57,7 @@ def test_one_search_finds_the_shelf_first_and_then_only_records_not_on_it(clean,
     assert [(t["title"], t["artist"]) for t in said["tracks"]] == [("Mi Plešemo", "Prljavo Kazalište")]
     assert said["records"] == [{"kind": "album", "source": "deezer", "id": "2", "title": "Heroj ulice",
                                 "artist": "Prljavo Kazaliste", "year": 1981,
-                                "cover_url": "https://img/2.jpg"}]
+                                "cover_url": picture("https://img/2.jpg")}]
     assert blank.json() == {"artists": [], "tracks": [], "records": []}
 
 

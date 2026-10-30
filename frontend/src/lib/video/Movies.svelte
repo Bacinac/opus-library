@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
@@ -87,8 +88,8 @@
 			.filter(Boolean)
 			.join(' · ')}
 		overview={d.overview || t('detail.noOverview')}
-		poster={d.poster_url}
-		backdrop={d.backdrop_url}
+		poster={picture(d.poster_url, 480)}
+		backdrop={picture(d.backdrop_url, 1920)}
 	>
 		{#snippet back()}
 			<div class="back"><Button size="small" onclick={() => (detail = null)}>{t('movies.back')}</Button></div>
@@ -144,7 +145,7 @@
 		{#each movies as movie (movie.id)}
 			<Poster
 				title={movie.title}
-				poster={movie.poster_url}
+				poster={picture(movie.poster_url, 320)}
 				sub={[movie.year ?? '', movie.present_subs.map((l) => l.toUpperCase()).join(' · ')]
 					.filter(Boolean)
 					.join(' · ')}

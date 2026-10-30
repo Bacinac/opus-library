@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import {
 		ArmedButton,
@@ -138,7 +139,7 @@
 					number: episode.number,
 					title: episode.title,
 					description: episode.overview,
-					image: episode.still_url,
+					image: picture(episode.still_url, 480),
 					runtime: episode.runtime_min,
 					dim: future,
 					note: future && episode.air_date ? formatDate(episode.air_date) : '',
@@ -182,8 +183,8 @@
 		title={detail.title}
 		subtitle={String(detail.year ?? '')}
 		overview={detail.overview || t('detail.noOverview')}
-		poster={detail.poster_url}
-		backdrop={detail.backdrop_url}
+		poster={picture(detail.poster_url, 480)}
+		backdrop={picture(detail.backdrop_url, 1920)}
 		count={`${formatNumber(owned)}/${formatNumber(known)}`}
 		{seasons}
 		bind:season
@@ -220,7 +221,7 @@
 		{#each list as row (row.id)}
 			<li>
 				{#if row.poster_url}
-					<img src={row.poster_url} alt={row.title} loading="lazy" />
+					<img src={picture(row.poster_url, 160)} alt={row.title} loading="lazy" />
 				{:else}
 					<div class="placeholder"></div>
 				{/if}

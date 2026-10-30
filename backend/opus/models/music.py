@@ -462,6 +462,22 @@ class MusicDownload(Base):
     release: Mapped[Release] = relationship(back_populates="downloads")
 
 
+class RadioStation(Base):
+    """A station: a name and a stream somebody else keeps alive, and the one
+    thing to listen to that has no file. It is on the shelf like a record is,
+    so it is listed here; playing it is the player's business."""
+
+    __tablename__ = "radio_stations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    genre: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    url: Mapped[str] = mapped_column(Text)
+    logo: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str] = mapped_column(String(8), default="", server_default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 def _searched(column) -> Index:
     label = f"{column.key}_unaccented"
     return Index(f"ix_{column.table.name}_{label}", func.unaccented(column).label(label),

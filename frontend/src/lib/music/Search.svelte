@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	import { t } from '#lib/i18n/index.js';
 	import { Latest, SearchBox, Tag, formatNumber, json, plural, request, toasts } from '#lib/kit/index.js';
 	import Found from '#lib/core/Found.svelte';
@@ -62,7 +63,7 @@
 <Found
 	items={results}
 	key={(result) => result.deezer_id ?? result.spotify_id}
-	picture={(result) => ({ src: result.image_url, alt: result.name })}
+	picture={(result) => ({ src: picture(result.image_url, 160), alt: result.name })}
 	onadd={add}
 >
 	{#snippet info(result)}

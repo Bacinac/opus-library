@@ -28,6 +28,7 @@ from opus.models.music import (
     MusicDownload,
     MusicDownloadStatus,
     MusicFile,
+    RadioStation,
     Release,
     ReleaseStatus,
     ReleaseVariant,
@@ -62,6 +63,7 @@ from opus.models.photos import (
     PhotoShare,
     PhotoShareItem,
 )
+from opus.models.pictures import Picture
 from opus.models.vault import VaultFile, VaultKey
 from opus.models.video import (
     AwardTitle,
@@ -89,11 +91,11 @@ __all__ = [
     "FaceCluster",
     "Person",
 
-    "Base", "LoopPass", "Setting", "FileImport",
+    "Base", "LoopPass", "Picture", "Setting", "FileImport",
     # music
     "Artist", "ArtistAlias", "ArtistExternalId", "ArtistRelation", "CatalogListing",
     "ChannelName", "DeezerAlbumCredit", "EnrichStatus", "FolderScanCache", "Image",
-    "MusicDownload", "MusicDownloadStatus", "MusicFile", "Release",
+    "MusicDownload", "MusicDownloadStatus", "MusicFile", "RadioStation", "Release",
     "ReleaseStatus", "ReleaseVariant", "SourceCooldown", "TidalAccount", "Track", "TrackLyrics",
     "WikiAlbumCache", "DOWNLOAD_SETTLED", "DOWNLOAD_SPENT", "DEAD_SOURCE",
     "ARTIST_CATALOG_IDS", "RELEASE_SOURCE_IDS", "TRACK_CATALOG_IDS",

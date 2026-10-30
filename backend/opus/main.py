@@ -15,6 +15,10 @@ from opus.db import SessionLocal
 from opus.music.pipeline import (download as music_download, monitor as music_monitor,
                                  records as music_records)
 from opus.photos import pipeline as photos_pipeline
+from opus.pictures import catalogue as pictures_catalogue
+from opus.pictures import store as pictures_store
+from opus.pictures import tiles as pictures_tiles
+from opus.pictures.door import Pictures
 from opus.settings_store import current_runtime
 from opus.video import awards as video_awards
 from opus.video import credits as video_credits
@@ -47,6 +51,7 @@ async def lifespan(app: FastAPI):
     # each half watches its own downloads and its own followed things: an
     # episode airing and a record coming out are the same event to the user and
     # nothing alike to the code that has to notice them
+    pictures_store.prepare()
     loops = [
         asyncio.create_task(music_download.poll_downloads_loop()),
         asyncio.create_task(music_monitor.monitor_loop()),
@@ -62,6 +67,7 @@ async def lifespan(app: FastAPI):
         # the photograph half had no loop of its own: every pass waited
         # to be asked, so a folder dropped in stayed a folder of files
         asyncio.create_task(photos_pipeline.watch_loop()),
+        asyncio.create_task(pictures_catalogue.pictures_loop()),
     ]
     yield
     for loop in loops:
@@ -70,11 +76,13 @@ async def lifespan(app: FastAPI):
     await acquire.close()
     await tmdb.close()
     await dida.close()
+    await pictures_store.close()
+    await pictures_tiles.close()
 
 
 class _Library(FastAPI):
     def build_middleware_stack(self):
-        return CompressJSON(opus_auth.secured(super().build_middleware_stack()))
+        return CompressJSON(Pictures(opus_auth.secured(super().build_middleware_stack())))
 
 
 app = _Library(title="OPUS · Library", lifespan=lifespan,

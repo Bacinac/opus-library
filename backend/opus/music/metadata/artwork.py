@@ -18,6 +18,8 @@ from opus.music.metadata.discogs import DiscogsClient, DiscogsError
 from opus.music.metadata.spotify import SpotifyClient, SpotifyCooldown, SpotifyError
 from opus.music.metadata import wikidata as wd
 from opus.models import Artist, ArtistExternalId, Image, Release
+from opus.pictures import store as pictures
+from opus.pictures.store import DEEZER_EMPTY
 from opus.settings_store import current_runtime
 from opus.music.textnorm import norm
 
@@ -44,16 +46,12 @@ class ArtworkError(Exception):
     pass
 
 
-# md5("") — the image-id Deezer serves for artists/albums with no picture
-DEEZER_EMPTY_MD5 = "d41d8cd98f00b204e9800998ecf8427e"
-
-
 async def _deezer_image_alive(url: str) -> bool:
     """Deezer never 404s a removed picture: the URL 302-redirects to the
     generic placeholder (the md5-of-empty-string segment). A candidate that
     is the placeholder outright, or redirects anywhere, is 'no real image' —
     otherwise it masks the album-cover fallback with a grey avatar."""
-    if f"/{DEEZER_EMPTY_MD5}/" in url:
+    if f"/{DEEZER_EMPTY}/" in url:
         return False
     async with httpx.AsyncClient(
         timeout=10, headers={"User-Agent": http.USER_AGENT}
@@ -70,12 +68,10 @@ def _score(image: Image) -> tuple[int, int]:
 
 
 async def fetch_image(url: str) -> tuple[bytes, str]:
-    async with httpx.AsyncClient(
-        timeout=30, follow_redirects=True, headers={"User-Agent": http.USER_AGENT}
-    ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.content, resp.headers.get("content-type", "image/jpeg").split(";")[0]
+    taken = await pictures.original(url)
+    if taken is None:
+        raise ArtworkError(f"no picture held for {url}")
+    return taken
 
 
 async def _itunes_album_candidates(artist: str, album: str) -> list[dict]:
@@ -389,7 +385,7 @@ async def list_candidates(session, entity_type: str, entity_id: int) -> list[dic
     )
     return [
         {
-            "id": i.id, "source": i.source, "url": i.url,
+            "id": i.id, "source": i.source, "picture": i.url,
             "width": i.width, "height": i.height, "chosen": i.chosen,
             "chosen_manual": i.chosen_manual,
         }

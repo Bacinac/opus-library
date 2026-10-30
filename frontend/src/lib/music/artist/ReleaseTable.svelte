@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { picture } from '#lib/core/picture.js';
 	// One discography table, drawn the same way for the canonical releases and
 	// for the demoted rest: cover, title, the quality and status readout, and
 	// the actions that belong to a single release. The expanded row only hands
@@ -86,7 +87,7 @@
 						<button class="cover" onclick={() => onpickcover(release)} title={t('artwork.title')}
 							aria-label={t('artwork.title')}>
 							{#if release.cover_url}
-								<img src={release.cover_url} alt={release.title} />
+								<img src={picture(release.cover_url, 160)} alt={release.title} />
 							{:else}
 								<span class="blank"></span>
 							{/if}
