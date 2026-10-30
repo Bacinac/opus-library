@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from conftest import library, run, signed_in
 from opus import db
-from opus.models import Artist, Image, MusicFile, Picture, RadioStation, Release, Track
+from opus.models import Artist, Image, Movie, MusicFile, Picture, RadioStation, Release, Track
 from opus.models.pictures import FAILED, HELD, NONE
 from opus.pictures import catalogue, door, store, tiles
 
@@ -237,6 +237,22 @@ def test_the_picture_beside_a_record_is_its_original(held, monkeypatch):
     answer = run(drawn())
     assert answer.status_code == 200
     assert pyvips.Image.new_from_buffer(answer.content, "").width == 160
+
+
+def test_every_face_and_mark_a_film_names_is_registered_and_one_without_is_passed_over(held):
+    async def scenario():
+        async with db.SessionLocal() as session:
+            session.add(Movie(tmdb_id=1, title="Film", year=2020,
+                              cast=[{"name": "Somebody", "profile_url": "https://image.tmdb.org/t/p/w185/a.jpg"},
+                                    {"name": "Nobody"}],
+                              directors=[{"name": "Nobody either", "profile_url": None}],
+                              studios=[{"name": "Studio", "logo": "https://image.tmdb.org/t/p/w92/s.png"}]))
+            await session.commit()
+            await session.execute(catalogue.REGISTER)
+            await session.commit()
+            return set((await session.execute(select(Picture.source))).scalars())
+
+    assert run(scenario()) == {"https://image.tmdb.org/t/p/w185/a.jpg", "https://image.tmdb.org/t/p/w92/s.png"}
 
 
 def test_a_file_that_has_gone_from_the_library_is_fetched_again(held, monkeypatch):

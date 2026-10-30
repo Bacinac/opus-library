@@ -48,7 +48,7 @@ _SLOTS = """
     UNION ALL SELECT logo FROM radio_stations
 """
 _FACES = " UNION ALL ".join(
-    f"SELECT jsonb_path_query({column}, 'strict $[*].{key}') #>> '{{}}' FROM {table}"
+    f"SELECT jsonb_path_query({column}, '$[*].{key}') #>> '{{}}' FROM {table}"
     for table in ("movies", "series")
     for column, key in (('"cast"', "profile_url"), ("directors", "profile_url"), ("studios", "logo")))
 
