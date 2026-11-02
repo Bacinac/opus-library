@@ -18,6 +18,10 @@ cd opus-suite-0.1.0
 
 The installer creates the first administrator, starts Library and Downloads, connects them, and writes `opus-player.enrollment.env` with mode `0600`.
 
+A finished first install sends one anonymous request to GitHub for a one-byte file of
+the release, so its download count says how many installs completed; nothing about
+the machine is sent or kept. `OPUS_NO_PING=1 ./install.sh` skips it.
+
 ## Install the playback role
 
 Securely copy the enrollment file and the same suite archive to the playback server. Mount or synchronize the five media folders so their contents match the storage server's `music`, `movies`, `television`, `video` and `photos` folders, then run:

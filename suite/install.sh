@@ -11,6 +11,7 @@ for dir in library downloads player; do
 	[[ -d "$ROOT/$dir" ]] || { echo "missing $dir/; run this installer from an OPUS Suite bundle" >&2; exit 1; }
 done
 source library/backend/opus_core/ops/install.sh
+export OPUS_RELEASE=$(<RELEASE)
 
 ROLE=
 HOST_ADDRESS=

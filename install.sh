@@ -91,3 +91,4 @@ if [[ -f "$CREDS" ]]; then
 fi
 echo "Configure integrations and library policy in Settings."
 echo "Copy media into $ROOT/volumes/{music,movies,television,video,photos}."
+opus_install_ping library

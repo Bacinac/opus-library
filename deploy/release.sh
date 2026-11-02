@@ -66,7 +66,8 @@ OUT=$WORK/release
 scripts/package-suite.sh "$OUT" || die "package-suite.sh refused the suite"
 SUITE="$OUT/opus-suite-$VERSION.tar.gz"
 [[ -f "$SUITE" ]] || die "package-suite.sh did not produce $(basename "$SUITE")"
-ASSETS=("$SUITE" "$SUITE.sha256" "$OUT"/opus-tv-*.apk "$OUT"/opus-music-*.apk)
+for module in library downloads player; do echo > "$OUT/install-$module"; done
+ASSETS=("$SUITE" "$SUITE.sha256" "$OUT"/opus-tv-*.apk "$OUT"/opus-music-*.apk "$OUT"/install-{library,downloads,player})
 ok "packaged and gated: $(cd "$OUT" && ls opus-suite-*.tar.gz opus-tv-*.apk opus-music-*.apk | tr '\n' ' ')"
 
 PREVIOUS=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$SHA^" 2>/dev/null || true)

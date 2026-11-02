@@ -58,6 +58,7 @@ cp "$PLAYER/android/dist/opus-music.apk" "$STAGE/$NAME/player/android/dist/opus-
 cp "$PLAYER/android/dist/apk.json" "$STAGE/$NAME/player/android/dist/apk.json"
 cp "$PLAYER/android/dist/music.json" "$STAGE/$NAME/player/android/dist/music.json"
 cp "$LIBRARY/suite/install.sh" "$STAGE/$NAME/install.sh"
+echo "v$VERSION" > "$STAGE/$NAME/RELEASE"
 cp "$LIBRARY/suite/README.md" "$STAGE/$NAME/README.md"
 printf 'library %s\ndownloads %s\nplayer %s\n' \
 	"$(git -C "$LIBRARY" rev-parse HEAD)" "$(git -C "$DOWNLOADS" rev-parse HEAD)" "$(git -C "$PLAYER" rev-parse HEAD)" \

@@ -3,12 +3,11 @@
 Requirements: a current Docker Engine with the Compose v2 plugin, `python3`,
 `curl`, and approximately 4 GiB of free space before adding media.
 
-From a release bundle:
+From a clone:
 
 ```bash
-sha256sum -c opus-library-0.1.0.tar.gz.sha256
-tar -xzf opus-library-0.1.0.tar.gz
-cd opus-library-0.1.0
+git clone --recurse-submodules https://github.com/Bacinac/opus-library.git
+cd opus-library
 ./install.sh
 ```
 
@@ -17,6 +16,10 @@ local media/state directories, builds the containers, waits for database
 readiness and creates the first administrator. Credentials are written once to
 `.install-admin` with mode `0600`. Existing secrets, the database and media are
 preserved on every later run.
+
+A finished first install sends one anonymous request to GitHub for a one-byte file of
+the release, so its download count says how many installs completed; nothing
+about the machine is sent or kept. `OPUS_NO_PING=1 ./install.sh` skips it.
 
 The UI is available on port `5280` and the API on `8095`. All five library types
 are initially mounted under `volumes/`; replace the corresponding

@@ -116,6 +116,14 @@ creates the first administrator, whose login is written once to
 `.install-admin` with mode `0600`. The interface is on port `5280`. Existing
 media folders and the rest are in [docs/INSTALL.md](docs/INSTALL.md).
 
+A finished first install sends one anonymous request to GitHub for a one-byte file of
+the release, so its download count says how many installs completed; nothing about
+the machine is sent or kept. `OPUS_NO_PING=1 ./install.sh` skips it.
+
+Questions and help with any OPUS module go to
+[Discussions](https://github.com/Bacinac/opus-library/discussions); bugs to the
+module's Issues.
+
 ## Upgrade
 
 ```bash
