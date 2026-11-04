@@ -97,7 +97,7 @@ CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-3e7a41dadfd065fac67c6922c3f3b43e}
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 
 publish() {
-	docker run --rm -v "$OUT/$1:/site:ro" -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID node:24 \
+	docker run --rm -v "$OUT/$1:/site:ro" -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID -e NPM_CONFIG_UPDATE_NOTIFIER=false node:24 \
 		npx -y wrangler@latest pages deploy /site --project-name "$2" --branch main
 }
 publish player opus-demo
