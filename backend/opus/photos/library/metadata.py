@@ -292,8 +292,9 @@ def _describe(photo: Photo, row: dict) -> None:
     lat, lon = _number(row.get("GPSLatitude")), _number(row.get("GPSLongitude"))
     # both or neither: half a coordinate is not a place, and a zero that
     # arrived alone is a camera with no fix rather than a photograph taken off
-    # the coast of Ghana
-    if lat is not None and lon is not None and (lat or lon):
+    # the coast of Ghana. A place somebody typed brought its town's coordinates,
+    # and the file's are the ones that were wrong.
+    if lat is not None and lon is not None and (lat or lon) and photo.place_source != "typed":
         photo.latitude, photo.longitude = lat, lon
         photo.altitude = _number(row.get("GPSAltitude"))
     lens = row.get("LensModel") or row.get("LensID")

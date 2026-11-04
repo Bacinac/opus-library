@@ -119,9 +119,11 @@ class Photo(Base):
     # the original is never rewritten, only its derivatives are drawn turned.
     turn: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
-    # Where it was taken. Decimal degrees as the file gives them, and nothing
-    # derived from them here: a place NAME is a different fact with a different
-    # source, and turning one into the other is somebody else's pass.
+    # Where it was taken. Decimal degrees as the file gives them — or, once
+    # somebody has typed the place, as the town they picked has them, because a
+    # receiver with a bad fix is wrong about the country and the person who was
+    # there is not. Nothing derived from them here: a place NAME is a different
+    # fact, and turning one into the other is somebody else's pass.
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     altitude: Mapped[float | None] = mapped_column(Float)

@@ -11,7 +11,7 @@ photographs while somebody is scrolling — which is exactly what happens here.
 """
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from opus.db import get_session
 from opus.models import Face, FACE_GENERATION, Person, Photo, User
 from opus.photos import circle as seen
-from opus.photos.library import derive, search
+from opus.photos.library import derive, places, search
 from opus.settings_store import current_runtime
 
 router = APIRouter()
@@ -182,6 +182,16 @@ async def places_list(request: Request, session=Depends(get_session)):
         "typed": typed, "cover": cover,
         "cover_turn": turned.get(bytes.fromhex(cover), 0) if cover else 0,
     } for place, country, n, lat, lon, first, last, typed, cover in rows]
+
+
+@router.get("/settlements")
+async def settlements(q: Annotated[str, Query(max_length=120)] = "",
+                      session=Depends(get_session)):
+    """The towns a typed name could mean, for saying where a photograph was taken."""
+    been = dict((await session.execute(
+        select(Photo.country, func.count()).where(Photo.country != "")
+        .group_by(Photo.country))).all())
+    return [asdict(town) for town in (await places.gazetteer()).find(q, been)]
 
 
 @router.get("/search")
@@ -468,14 +478,14 @@ def _year_cards(rows: list[Photo], named: dict[int, list[dict]],
 
 
 class Place(BaseModel):
-    """A name for where a photograph was taken, and how far it should reach."""
-    name: str
-    # a trip is not entered one photograph at a time: the same name is meant for
+    """The settlement a photograph was taken in, and how far it should reach."""
+    settlement: int
+    # a trip is not entered one photograph at a time: the same place is meant for
     # everything taken that day, or across a run of days
     day: bool = False
     from_day: datetime.date | None = None
     to_day: datetime.date | None = None
-    # a name never lands on a photograph that already carries one somebody typed
+    # a place never lands on a photograph that already carries one somebody typed
     over_typed: bool = False
 
 
@@ -484,10 +494,12 @@ async def name_the_place(checksum: str, body: Place, session=Depends(get_session
     """Say where a photograph was taken.
 
     Nothing is inferred here and nothing is guessed from neighbours: a camera
-    without a receiver recorded nothing, and the only honest source for those
-    twenty thousand photographs is the person who was there. It is written down
-    as typed, so a name worked out later from coordinates can fill the gaps
-    without ever overwriting one somebody meant."""
+    without a receiver recorded nothing, and one with a bad fix recorded the
+    wrong country. The person who was there picks the town, and the town brings
+    its name, its country and its coordinates, all written down as typed — so a
+    name worked out later from coordinates can fill the gaps without ever
+    overwriting one somebody meant, and reading the file again does not put the
+    camera's coordinates back."""
     try:
         digest = bytes.fromhex(checksum)
     except ValueError:
@@ -496,8 +508,10 @@ async def name_the_place(checksum: str, body: Place, session=Depends(get_session
         select(Photo).where(Photo.checksum == digest))).scalar_one_or_none()
     if photo is None:
         raise HTTPException(404, "no such photograph")
+    town = (await places.gazetteer()).at(body.settlement)
+    if town is None:
+        raise HTTPException(422, "no such settlement")
 
-    name = body.name.strip()[:120]
     where = [Photo.id == photo.id]
     if body.day or body.from_day or body.to_day:
         if photo.taken_at is None and not (body.from_day and body.to_day):
@@ -514,18 +528,17 @@ async def name_the_place(checksum: str, body: Place, session=Depends(get_session
         last = (await session.execute(select(func.timezone(
             str(zone), datetime.datetime.combine(end, datetime.time.max))))).scalar_one()
         where = [Photo.taken_at >= first, Photo.taken_at <= last]
-    # The guard is there so a name spread across a day does not stomp on places
-    # typed one at a time. It has no business stopping somebody clearing what
-    # they typed, or naming a single photograph on purpose.
-    if not body.over_typed and name and (body.day or body.from_day or body.to_day):
-        where.append(Photo.place_source != "typed")
+        # spread across a day, a place does not stomp on places typed one at a time
+        if not body.over_typed:
+            where.append(Photo.place_source != "typed")
 
     changed = (await session.execute(
         Photo.__table__.update().where(*where)
-        .values(place=name, place_source="typed" if name else "")
+        .values(place=town.name, country=town.country, latitude=town.latitude,
+                longitude=town.longitude, altitude=None, place_source="typed")
         .returning(Photo.id))).all()
     await session.commit()
-    return {"place": name or None, "photographs": len(changed)}
+    return {"place": town.name, "country": town.country, "photographs": len(changed)}
 
 
 @router.get("/{checksum}")
