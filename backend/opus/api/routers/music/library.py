@@ -156,6 +156,15 @@ async def library_stats(session: AsyncSession = Depends(get_session)):
     artists = await session.scalar(
         select(func.count()).select_from(Artist).where(Artist.monitored))
     tracks = await session.scalar(select(func.count()).select_from(MusicFile))
+    # how long the shelf takes to hear once: a track held as two files is
+    # still one track's worth of listening
+    per_track = (
+        select(func.max(MusicFile.duration_sec).label("seconds"))
+        .where(MusicFile.track_id.isnot(None))
+        .group_by(MusicFile.track_id)
+        .subquery()
+    )
+    seconds = await session.scalar(select(func.sum(per_track.c.seconds)))
     # The years the shelf runs between, read off the records that are ON it and
     # not off the artists' begin_years: the year a band was formed is not a year
     # of music.
@@ -171,6 +180,7 @@ async def library_stats(session: AsyncSession = Depends(get_session)):
         "artists": artists or 0,
         "albums": held or 0,
         "tracks": tracks or 0,
+        "hours": round((seconds or 0) / 3600),
         "complete": (held or 0) - (doubtful or 0),
         "doubtful": doubtful or 0,
         "span": [min(years), max(years)] if len(years) == 2 and years[0] != years[1] else None,

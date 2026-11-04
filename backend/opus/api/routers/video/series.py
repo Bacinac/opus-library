@@ -86,17 +86,30 @@ async def series_list(lang: str = "en", session=Depends(get_session)):
         select(Series).order_by(Series.added_at.desc())
     )).scalars())
 
-    # how many episodes each series has, and how many of them are on disk
+    # how many episodes each series has, how many of them are on disk, and how
+    # long those take to watch. An episode is timed once however many files it
+    # has (a copy and its replacement), by the file where it was probed and by
+    # TMDB's running time where it was not.
+    per_episode = (
+        select(Episode.id.label("id"), Episode.season_id.label("season_id"),
+               func.count(VideoFile.id).label("files"),
+               func.coalesce(func.max(VideoFile.duration_s),
+                             Episode.runtime_min * 60).label("seconds"))
+        .outerjoin(VideoFile, VideoFile.episode_id == Episode.id)
+        .group_by(Episode.id)
+        .subquery()
+    )
+    owned_col = per_episode.c.files > 0
     counted = (await session.execute(
         select(Season.series_id,
-               func.count(Episode.id.distinct()),
-               func.count(VideoFile.episode_id.distinct()))
+               func.count(),
+               func.count().filter(owned_col),
+               func.sum(per_episode.c.seconds).filter(owned_col))
         .select_from(Season)
-        .join(Episode, Episode.season_id == Season.id)
-        .outerjoin(VideoFile, VideoFile.episode_id == Episode.id)
+        .join(per_episode, per_episode.c.season_id == Season.id)
         .group_by(Season.series_id)
     )).all()
-    totals = {sid: (total, owned) for sid, total, owned in counted}
+    totals = {sid: (total, owned, seconds) for sid, total, owned, seconds in counted}
 
     langs: dict[int, list] = {}
     for series_id, found in (await session.execute(
@@ -111,7 +124,7 @@ async def series_list(lang: str = "en", session=Depends(get_session)):
 
     out = []
     for series in rows:
-        total, owned = totals.get(series.id, (0, 0))
+        total, owned, seconds = totals.get(series.id, (0, 0, None))
         complete = sum(policy_met(config, series.subtitle_override, found)
                        for found in langs.get(series.id, []))
         out.append({
@@ -131,6 +144,7 @@ async def series_list(lang: str = "en", session=Depends(get_session)):
             # somebody watching it arrive that it has arrived.
             "episodes_have": owned,
             "episodes_known": total,
+            "minutes_have": round((seconds or 0) / 60),
         })
     return out
 
