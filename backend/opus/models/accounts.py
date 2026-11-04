@@ -123,6 +123,8 @@ class Device(Base):
     # so a list of boxes can say which one has not been switched on since March
     seen_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+    # the build of the app it was running when last seen, as the app names it
+    app: Mapped[str] = mapped_column(String(32), default="", server_default="")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

@@ -145,14 +145,19 @@ async def holding(session, token: str) -> Device | None:
     return rows.scalar_one_or_none()
 
 
-async def seen(session, device: Device):
+async def seen(session, device: Device, app: str = ""):
     """Noted at most once a minute. This is written on requests that are
     otherwise pure reads, and a write per thumbnail would be a write per
-    thumbnail."""
+    thumbnail. A box that did not say which build it runs keeps the last one
+    it did."""
     now = datetime.now(timezone.utc)
-    if device.seen_at and (now - device.seen_at) < timedelta(minutes=1):
+    app = app.strip()[:32]
+    moved = bool(app) and app != device.app
+    if not moved and device.seen_at and (now - device.seen_at) < timedelta(minutes=1):
         return
     device.seen_at = now
+    if app:
+        device.app = app
     await session.commit()
 
 
@@ -200,6 +205,7 @@ def shown(device: Device, whose: str | None = None) -> dict:
         "let_in_by": device.let_in_by,
         "let_in_at": device.let_in_at.isoformat() if device.let_in_at else None,
         "seen_at": device.seen_at.isoformat() if device.seen_at else None,
+        "app": device.app,
         # the person this box is, or nobody: the household's
         "person": whose,
     }

@@ -101,3 +101,18 @@ def test_a_box_renamed_answers_to_its_new_name(clean):
             device = await devices.holding(session, token)
             assert device is not None and device.name == "Nika"
     run(scenario())
+
+
+def test_a_box_says_which_build_it_runs_and_keeps_it_when_it_cannot(clean):
+    async def scenario():
+        device_id, code, claim = await _asked()
+        await _let_in(code)
+        token = (await _collect(device_id, claim))["token"]
+        async with db.SessionLocal() as session:
+            device = await devices.holding(session, token)
+            await devices.seen(session, device, "v1.0.65")
+            await devices.seen(session, device, "")
+            assert devices.shown(device)["app"] == "v1.0.65"
+            await devices.seen(session, device, "v1.0.66")
+            assert (await devices.holding(session, token)).app == "v1.0.66"
+    run(scenario())

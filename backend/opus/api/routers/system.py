@@ -7,7 +7,7 @@ from pathlib import Path
 
 import opus_auth
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -149,6 +149,7 @@ class Asking(BaseModel):
 
 class Held(BaseModel):
     token: str
+    app: str = Field(default="", max_length=32)
 
 
 class Claim(BaseModel):
@@ -606,7 +607,7 @@ async def devices_verify(body: Held, request: Request,
     if whose is not None and whose.disabled:
         # somebody switched off is out everywhere, their own box included
         return {"ok": False}
-    await devices.seen(session, device)
+    await devices.seen(session, device, body.app)
     return {"ok": True, "id": device.id, "name": device.name,
             "person": whose.name if whose else None}
 
