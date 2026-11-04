@@ -102,13 +102,15 @@ async def refusal(request: Request) -> JSONResponse | None:
     # and a page elsewhere reaches those without carrying one
     if (cookie or path in auth.OPEN_PATHS) and not module and not opus_auth.same_origin(request):
         return JSONResponse({"detail": "not sent from this module's pages"}, status_code=403)
-    if not auth.allowed(config, roster, path, cookie, token, request.method):
+    named = request.headers.get(opus_auth.FOR_HEADER) or None
+    if not auth.allowed(config, roster, path, cookie, token, request.method, named):
         # signed in and not allowed is a different answer from not signed in,
         # and the browser acts on the difference: one sends you to the login
         # screen you already passed, the other tells you the truth
         if module or auth.whoami(roster, cookie):
             return JSONResponse({"detail": "not yours to change"}, status_code=403)
         return JSONResponse({"detail": "authentication required"}, status_code=401)
+    request.state.circle = auth.circle(roster, auth.asking(config, roster, cookie, token, named))
     return None
 
 

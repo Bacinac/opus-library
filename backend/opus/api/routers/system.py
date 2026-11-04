@@ -161,10 +161,6 @@ class LettingIn(BaseModel):
     name: str = ""
 
 
-class Naming(BaseModel):
-    name: str
-
-
 class NewPerson(BaseModel):
     name: str
     password: str
@@ -179,6 +175,13 @@ class Amendment(BaseModel):
     disabled: bool | None = None
     person_id: int | None = None
     unlink: bool = False
+    circle: list[int] | None = None
+
+
+class DeviceChange(BaseModel):
+    name: str | None = None
+    # whose box it is; null gives it back to the household
+    person: str | None = None
 
 
 async def _me(request: Request, session: AsyncSession):
@@ -461,6 +464,11 @@ async def auth_amend_person(name: str, body: Amendment, request: Request,
     if stepping_down and await accounts.admins(session) < 2:
         # an install with no admin has nobody who can make one
         raise HTTPException(409, "the last admin cannot step down")
+    if body.circle is not None:
+        circle = sorted(set(body.circle))
+        found = set((await session.scalars(select(Person.id).where(Person.id.in_(circle)))).all())
+        if found != set(circle):
+            raise HTTPException(404, "no such face in the photographs")
     if body.person_id is not None and not body.unlink:
         if await session.get(Person, body.person_id) is None:
             raise HTTPException(404, "no such face in the photographs")
@@ -471,7 +479,8 @@ async def auth_amend_person(name: str, body: Amendment, request: Request,
     await accounts.amend(session, person, display=body.display,
                          secret=body.password, role=body.role,
                          disabled=body.disabled, person_id=body.person_id,
-                         unlink=body.unlink)
+                         unlink=body.unlink,
+                         circle=sorted(set(body.circle)) if body.circle is not None else None)
     return accounts.shown(person) | {"was_me": person.id == me.id}
 
 
@@ -525,7 +534,9 @@ async def devices_claim(body: Claim, request: Request,
 @router.get("/auth/devices")
 async def devices_list(request: Request, session: AsyncSession = Depends(get_session)):
     await _admin(request, session)
-    return {"devices": [devices.shown(d) for d in await devices.everyone(session)]}
+    names = {p.id: p.name for p in await accounts.everyone(session)}
+    return {"devices": [devices.shown(d, names.get(d.person_id))
+                        for d in await devices.everyone(session)]}
 
 
 @router.post("/auth/devices")
@@ -544,16 +555,26 @@ async def devices_let_in(body: LettingIn, request: Request,
 
 
 @router.patch("/auth/devices/{device_id}")
-async def devices_rename(device_id: int, body: Naming, request: Request,
+async def devices_change(device_id: int, body: DeviceChange, request: Request,
                          session: AsyncSession = Depends(get_session)):
     await _admin(request, session)
     device = await devices.claimed(session, device_id)
     if device is None or device.let_in_at is None:
         raise HTTPException(404, "no such device")
-    if not body.name.strip():
-        raise HTTPException(422, "a box is known by its name")
-    await devices.rename(session, device, body.name)
-    return devices.shown(device)
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(422, "a box is known by its name")
+        await devices.rename(session, device, body.name)
+    if "person" in body.model_fields_set:
+        whose = await accounts.by_name(session, body.person) if body.person else None
+        if body.person and whose is None:
+            raise HTTPException(404, "no such person")
+        if whose is not None and whose.role == opus_auth.ADMIN:
+            # an admin keeps the place and is offered on no television
+            raise HTTPException(409, "a box cannot be the admin's")
+        await devices.belongs(session, device, whose)
+    whose = await devices.owner(session, device)
+    return devices.shown(device, whose.name if whose else None)
 
 
 @router.delete("/auth/devices/{device_id}")
@@ -572,15 +593,22 @@ async def devices_verify(body: Held, request: Request,
                          session: AsyncSession = Depends(get_session)):
     """Is this box still let in — asked by the module holding the box's token.
 
-    Says nothing about who is watching. A device is an appliance and this answer
-    is only ever "yes, and it is called the living room", which is exactly as
-    much as a screen in a shared room should be able to establish about itself."""
+    Says nothing about who is watching. A household's box is an appliance and
+    this answer is only ever "yes, and it is called the living room", which is
+    exactly as much as a screen in a shared room should be able to establish
+    about itself. A box that is somebody's says whose, because then it is that
+    person whoever holds the remote."""
     _service(request, await current_runtime())
     device = await devices.holding(session, body.token)
     if device is None:
         return {"ok": False}
+    whose = await devices.owner(session, device)
+    if whose is not None and whose.disabled:
+        # somebody switched off is out everywhere, their own box included
+        return {"ok": False}
     await devices.seen(session, device)
-    return {"ok": True, "id": device.id, "name": device.name}
+    return {"ok": True, "id": device.id, "name": device.name,
+            "person": whose.name if whose else None}
 
 
 @router.get("/auth/token")

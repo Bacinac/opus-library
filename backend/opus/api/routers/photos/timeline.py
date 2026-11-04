@@ -16,13 +16,14 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 import opus_auth
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
 from opus.db import get_session
 from opus.models import Face, FACE_GENERATION, Person, Photo, User
+from opus.photos import circle as seen
 from opus.photos.library import derive, search
 from opus.settings_store import current_runtime
 
@@ -65,9 +66,12 @@ class Whose:
     unasked: a shelf opened by hand may hold the neighbour's wedding, a
     screensaver in the living room may not, and a landscape is fine on both."""
 
-    person: Annotated[list[int] | None, Query()] = None
+    person: list[int] | None = None
     family: bool = False
     household: bool = False
+    # a guest's circle, which narrows every one of the above and is not one of
+    # them: it is who is asking, not what they asked for
+    circle: tuple[int, ...] | None = None
 
     def __bool__(self) -> bool:
         return bool(self.person) or self.family or self.household
@@ -76,6 +80,10 @@ class Whose:
         said = []
         if self.person:
             said.append(_in_it(Face.person_id.in_(self.person)))
+        if self.circle is not None:
+            # a guest's family is the circle, and the household is not theirs
+            said.append(seen.shows(self.circle))
+            return said
         if self.family:
             said.append(_in_it(Face.person_id.in_(_family())))
         if self.household:
@@ -84,9 +92,14 @@ class Whose:
         return said
 
 
-async def _asked(session, q: str) -> tuple[search.Reading, str]:
+def _whose(request: Request, person: Annotated[list[int] | None, Query()] = None,
+           family: bool = False, household: bool = False) -> Whose:
+    return Whose(person, family, household, seen.of(request))
+
+
+async def _asked(session, q: str, circle: tuple[int, ...] | None) -> tuple[search.Reading, str]:
     config = await current_runtime()
-    vocabulary = await search.vocabulary(session, derive.store_root(config))
+    vocabulary = await search.vocabulary(session, derive.store_root(config), circle)
     return search.read(q, vocabulary), config.get("photos_timezone") or "Europe/Zagreb"
 
 
@@ -129,13 +142,18 @@ def _shape(photo: Photo) -> dict:
 
 
 @router.get("/places")
-async def places_list(session=Depends(get_session)):
+async def places_list(request: Request, session=Depends(get_session)):
     """Everywhere the archive has been, and how much of it happened there.
 
     A place is worth showing only if the photographs agree on its name, so this
     counts what is stored rather than what could be worked out — a coordinate
     with no name is somewhere nobody has been told about yet."""
-    rows = (await session.execute(text("""
+    circle = seen.of(request)
+    # a guest with a circle has been only where somebody of it was photographed
+    held = ("" if circle is None else
+            "AND EXISTS (SELECT 1 FROM photo_faces f WHERE f.photo_id = {0}.id"
+            " AND f.person_id = ANY(:circle))")
+    rows = (await session.execute(text(f"""
         SELECT p.place, p.country, count(*) AS n,
                -- a point to pin it to. The middle of what was photographed
                -- there, not the middle of the town: a week on one beach should
@@ -146,12 +164,12 @@ async def places_list(session=Depends(get_session)):
                count(*) FILTER (WHERE p.place_source = 'typed') AS typed,
                (SELECT encode(c.checksum, 'hex') FROM photos c
                  WHERE c.place = p.place AND c.country = p.country
-                   AND c.derived_gen = :gen
+                   AND c.derived_gen = :gen {held.format("c")}
                  ORDER BY c.taken_at DESC NULLS LAST LIMIT 1) AS cover
-        FROM photos p WHERE p.place <> ''
+        FROM photos p WHERE p.place <> '' {held.format("p")}
         GROUP BY p.place, p.country
         ORDER BY count(*) DESC
-    """), {"gen": derive.GENERATION})).all()
+    """), {"gen": derive.GENERATION} | ({} if circle is None else {"circle": list(circle)}))).all()
     turned = dict((await session.execute(
         select(Photo.checksum, Photo.turn)
         .where(Photo.checksum.in_([bytes.fromhex(r.cover) for r in rows if r.cover]),
@@ -167,10 +185,11 @@ async def places_list(session=Depends(get_session)):
 
 
 @router.get("/search")
-async def photo_search(q: str = Query(max_length=200), session=Depends(get_session)):
+async def photo_search(request: Request, q: str = Query(max_length=200),
+                       session=Depends(get_session)):
     """What each word of a search was taken to name, and the words that named
     nothing — so a shelf that comes back empty can say which word it was."""
-    reading, _ = await _asked(session, q)
+    reading, _ = await _asked(session, q, seen.of(request))
     ids = {i for term in reading.terms if term.kind == "person" for i in term.value}
     names = dict((await session.execute(
         select(Person.id, Person.name).where(Person.id.in_(ids)))).all()) if ids else {}
@@ -179,7 +198,7 @@ async def photo_search(q: str = Query(max_length=200), session=Depends(get_sessi
 
 
 @router.get("/timeline/buckets")
-async def timeline_buckets(place: str | None = None, whose: Whose = Depends(),
+async def timeline_buckets(place: str | None = None, whose: Whose = Depends(_whose),
                            q: str = Query("", max_length=200),
                            session=Depends(get_session)):
     """How many photographs in each month, newest first.
@@ -208,7 +227,7 @@ async def timeline_buckets(place: str | None = None, whose: Whose = Depends(),
         counted = counted.where(clause)
         nothing = nothing.where(clause)
     if q.strip():
-        reading, zone = await _asked(session, q)
+        reading, zone = await _asked(session, q, whose.circle)
         counted = search.narrowed(counted, reading, zone)
         nothing = search.narrowed(nothing, reading, zone)
     rows = (await session.execute(
@@ -228,7 +247,7 @@ async def timeline(
     before_id: int | None = None,
     month: str | None = None,
     place: str | None = None,
-    whose: Whose = Depends(),
+    whose: Whose = Depends(_whose),
     q: str = Query("", max_length=200),
     limit: int = Query(200, ge=1, le=MAX_PAGE),
     session=Depends(get_session),
@@ -273,7 +292,7 @@ async def timeline(
     if place is not None:
         query = query.where(Photo.place == place)
     if q.strip():
-        reading, zone = await _asked(session, q)
+        reading, zone = await _asked(session, q, whose.circle)
         query = search.narrowed(query, reading, zone)
     if before is not None:
         # A row-wise comparison and not the OR that spells out the same thing:
@@ -297,7 +316,7 @@ async def on_this_day(
     day: int | None = Query(None, ge=1, le=31),
     span: int | None = Query(None, ge=0, le=3),
     least: int = Query(0, ge=0, le=MAX_PAGE),
-    whose: Whose = Depends(),
+    whose: Whose = Depends(_whose),
     limit: int = Query(400, ge=1, le=MAX_PAGE),
     session=Depends(get_session),
 ):
@@ -348,7 +367,7 @@ async def on_this_day(
 
 @router.get("/years")
 async def through_the_years(
-    whose: Whose = Depends(),
+    whose: Whose = Depends(_whose),
     each: int = Query(12, ge=1, le=100),
     session=Depends(get_session),
 ):
@@ -510,7 +529,7 @@ async def name_the_place(checksum: str, body: Place, session=Depends(get_session
 
 
 @router.get("/{checksum}")
-async def photo_detail(checksum: str, session=Depends(get_session)):
+async def photo_detail(checksum: str, request: Request, session=Depends(get_session)):
     """One photograph, with every path it is found at.
 
     The paths are shown because a person who is about to delete something is
@@ -525,14 +544,18 @@ async def photo_detail(checksum: str, session=Depends(get_session)):
         .where(Photo.checksum == digest))).scalar_one_or_none()
     if photo is None:
         raise HTTPException(404, "no such photograph")
+    circle = seen.of(request)
+    await seen.sees(session, photo.id, circle)
     return {
         **_shape(photo),
         "bytes": photo.byte_size,
         "device": " ".join(x for x in (photo.device_make, photo.device_model) if x),
         "offset": photo.taken_offset,
-        "files": [{"path": f.path, "state": f.state,
-                   "missing_since": f.missing_since.isoformat() if f.missing_since else None}
-                  for f in photo.files],
+        # where it lies on the disk is the household's business, not a guest's
+        "files": [] if circle is not None else [
+            {"path": f.path, "state": f.state,
+             "missing_since": f.missing_since.isoformat() if f.missing_since else None}
+            for f in photo.files],
         "live_pair": photo.live_pair_id is not None,
         "where": ({"lat": photo.latitude, "lon": photo.longitude,
                    "alt": photo.altitude} if photo.latitude is not None else None),

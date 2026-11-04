@@ -1,11 +1,13 @@
 import datetime
+import hashlib
 
+import opus_auth
 import pytest
 from sqlalchemy import select
 
 from conftest import library, run, signed_in
-from opus import db
-from opus.models import Person, User
+from opus import auth, db
+from opus.models import Device, Person, Setting, User
 from scene import Scene
 
 
@@ -197,3 +199,139 @@ def test_a_person_and_the_family_are_drawn_from_every_year_they_are_in(one_day):
     assert all(p["people"] == ["Filip"] for y in his["years"] for p in y["photographs"])
     assert [(y["year"], len(y["photographs"])) for y in ours["years"]] == [(2013, 3), (2010, 1)]
     assert neither == 400
+
+
+def _photo(n: int) -> str:
+    return hashlib.sha1(str(n).encode()).hexdigest()
+
+
+def _cousin():
+    async def make():
+        token = await signed_in("cousin", role="guest")
+        async with db.SessionLocal() as session:
+            ana = (await session.execute(select(Person).where(Person.name == "Ana Vuk"))).scalar_one()
+            user = (await session.execute(select(User).where(User.name == "cousin"))).scalar_one()
+            user.circle = [ana.id]
+            await session.commit()
+        auth.forget_roster()
+        return token, ana.id
+    return run(make())
+
+
+def test_a_cousin_sees_the_photographs_his_circle_is_in_and_no_others(one_day):
+    """Ana is in 2011, Filip in 2013, nobody in 2009. A guest whose circle is Ana
+    sees 2011 on every screen, and the other two do not exist for him."""
+    token, ana = _cousin()
+
+    async def scenario():
+        async with library(token) as client:
+            return {
+                "shelf": (await client.get("/api/photos/timeline")).json(),
+                "rail": (await client.get("/api/photos/timeline/buckets")).json(),
+                "day": (await client.get(
+                    "/api/photos/onthisday?month=9&day=22&span=0&household=true")).json(),
+                "years": (await client.get("/api/photos/years?family=true")).json(),
+                "people": (await client.get("/api/photos/people")).json(),
+                "search": (await client.get("/api/photos/search?q=Filip")).json(),
+                "theirs": await client.get(f"/api/photos/{_photo(2)}"),
+                "ours": await client.get(f"/api/photos/{_photo(1)}"),
+                "nobody": await client.get(f"/api/photos/{_photo(3)}/preview"),
+                "vault": await client.get("/api/photos/vault"),
+            }
+
+    seen = run(scenario())
+    assert [p["id"] for p in seen["shelf"]["photos"]] == [_photo(2)]
+    assert seen["rail"]["total"] == 1
+    # the household and the family are the circle for him, not the house's
+    assert [y["year"] for y in seen["day"]["years"]] == [2011]
+    assert [y["year"] for y in seen["years"]["years"]] == [2011]
+    assert [p["id"] for p in seen["people"]] == [ana]
+    # Filip is not a name his search knows
+    assert seen["search"]["unread"] == ["Filip"]
+    assert seen["theirs"].status_code == 200 and seen["theirs"].json()["files"] == []
+    assert seen["ours"].status_code == 404
+    assert seen["nobody"].status_code == 404
+    assert seen["vault"].status_code == 403
+
+
+def test_the_player_asking_for_the_cousin_gets_what_he_would(one_day):
+    token, _ = _cousin()
+
+    async def scenario():
+        async with db.SessionLocal() as session:
+            session.add(Setting(key=auth.token_key("player"), value="player-token-0123456789"))
+            await session.commit()
+        from opus import settings_store
+        settings_store.forget_runtime()
+        async with library() as client:
+            client.headers[opus_auth.TOKEN_HEADER] = "player-token-0123456789"
+            whole = (await client.get("/api/photos/timeline")).json()
+            client.headers[opus_auth.FOR_HEADER] = "cousin"
+            his = (await client.get("/api/photos/timeline")).json()
+            ours = await client.get(f"/api/photos/{_photo(1)}/preview")
+            game = await client.get("/api/photos/draw")
+            client.headers[opus_auth.FOR_HEADER] = "nobody"
+            stranger = await client.get("/api/photos/timeline")
+            return whole, his, ours, game, stranger
+
+    whole, his, ours, game, stranger = run(scenario())
+    assert len(whole["photos"]) == 3
+    assert [p["id"] for p in his["photos"]] == [_photo(2)]
+    assert ours.status_code == 404
+    assert game.status_code == 403
+    assert stranger.status_code == 403
+
+
+def test_a_box_that_is_somebody_s_says_whose_and_leaves_with_them(one_day):
+    _cousin()
+    admin = run(signed_in("boss"))
+
+    async def let_in():
+        async with db.SessionLocal() as session:
+            box = Device(module="opus-player", name="Cousin's", token="d" * 64,
+                         let_in_at=datetime.datetime.now(datetime.UTC))
+            session.add(box)
+            await session.commit()
+            return box.id
+
+    box = run(let_in())
+
+    async def scenario():
+        async with library(admin) as client:
+            refused = await client.patch(f"/api/auth/devices/{box}", json={"person": "boss"})
+            his = await client.patch(f"/api/auth/devices/{box}", json={"person": "cousin"})
+            listed = (await client.get("/api/auth/devices")).json()["devices"]
+            back = await client.patch(f"/api/auth/devices/{box}", json={"person": None})
+            again = await client.patch(f"/api/auth/devices/{box}", json={"person": "cousin"})
+            gone = await client.delete("/api/auth/people/cousin")
+        async with db.SessionLocal() as session:
+            return refused, his, listed, back, again, gone, await session.get(Device, box)
+
+    refused, his, listed, back, again, gone, kept = run(scenario())
+    assert refused.status_code == 409
+    assert his.json()["person"] == "cousin" and listed[0]["person"] == "cousin"
+    assert back.json()["person"] is None and back.json()["name"] == "Cousin's"
+    assert again.json()["person"] == "cousin"
+    assert gone.status_code in (200, 204)
+    # his box went with him rather than becoming the household's
+    assert kept is None
+
+
+def test_a_circle_is_set_by_an_admin_out_of_the_people_in_the_photographs(one_day):
+    _cousin()
+    admin = run(signed_in("boss"))
+
+    async def scenario():
+        async with library(admin) as client:
+            people = {p["name"]: p["id"] for p in (await client.get("/api/photos/people")).json()}
+            set_ = await client.patch("/api/auth/people/cousin",
+                                      json={"circle": [people["Filip Babic"], people["Ana Vuk"]]})
+            unknown = await client.patch("/api/auth/people/cousin", json={"circle": [987654]})
+            roster = {p["name"]: p for p in (await client.get("/api/auth/people")).json()["people"]}
+            return people, set_, unknown, roster
+
+    people, set_, unknown, roster = run(scenario())
+    assert set_.status_code == 200
+    assert set_.json()["circle"] == sorted([people["Filip Babic"], people["Ana Vuk"]])
+    assert unknown.status_code == 404
+    assert roster["cousin"]["circle"] == sorted([people["Filip Babic"], people["Ana Vuk"]])

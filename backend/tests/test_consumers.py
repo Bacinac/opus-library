@@ -12,7 +12,7 @@ from opus.settings_store import RuntimeConfig
 TOKENS = {"player": "player-token-0123456789", "downloads": "downloads-token-0123456789",
           "cameras": "cameras-token-0123456789"}
 RUNTIME = RuntimeConfig({auth.token_key(name): token for name, token in TOKENS.items()})
-ROSTER = {"boss": (1, "admin", False)}
+ROSTER = {"boss": (1, "admin", False, ())}
 CHECKSUM = "0123456789abcdef0123456789abcdef01234567"
 
 PLAYER = [

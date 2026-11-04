@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select, update
 
-from opus.models import Device
+from opus.models import Device, User
 
 # No O, I, 0 or 1. Somebody is reading this off a television across a room and
 # typing it on a phone, and the pairs that letter-shape confusion turns into
@@ -172,12 +172,21 @@ async def rename(session, device: Device, name: str):
     await session.commit()
 
 
+async def belongs(session, device: Device, person: User | None):
+    device.person_id = person.id if person else None
+    await session.commit()
+
+
+async def owner(session, device: Device) -> User | None:
+    return await session.get(User, device.person_id) if device.person_id else None
+
+
 async def take_back(session, device: Device):
     await session.execute(delete(Device).where(Device.id == device.id))
     await session.commit()
 
 
-def shown(device: Device) -> dict:
+def shown(device: Device, whose: str | None = None) -> dict:
     # Never the code. Saying yes is an act only while the code has to be read
     # off the television itself; a list that carried it would let somebody
     # else's box in on a distracted click.
@@ -191,4 +200,6 @@ def shown(device: Device) -> dict:
         "let_in_by": device.let_in_by,
         "let_in_at": device.let_in_at.isoformat() if device.let_in_at else None,
         "seen_at": device.seen_at.isoformat() if device.seen_at else None,
+        # the person this box is, or nobody: the household's
+        "person": whose,
     }

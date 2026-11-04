@@ -140,6 +140,19 @@ CAMERAS_CALLS = _calls(
 )
 
 
+# What of the album a guest with a circle may reach: the screens a player draws
+# it on, every one of them narrowed to the photographs somebody of the circle is
+# in. A list, so a route added tomorrow is not theirs until it narrows too.
+CIRCLE_CALLS = _calls(
+    ("GET", r"/api/photos/search"),
+    ("GET", r"/api/photos/timeline(/buckets)?"),
+    ("GET", r"/api/photos/(onthisday|years|people|places)"),
+    ("GET", r"/api/photos/[0-9a-f]{40}(/(tile|preview|playback|play))?"),
+    ("GET", r"/api/photos/faces/\d+/(crop|portrait)"),
+    ("GET", r"/api/photos/people/\d+/morph"),
+)
+
+
 def _among(calls: tuple, path: str, method: str) -> bool:
     return any(method == allowed and pattern.fullmatch(path) for allowed, pattern in calls)
 
@@ -175,7 +188,7 @@ def consumer(runtime, token: str | None) -> str | None:
 # than asked because every write to it goes through opus.accounts, which drops
 # this the moment it commits — so it is not a cache that can be stale, it is the
 # same answer kept between two questions nobody changed anything in between.
-_held: dict[str, tuple[int, str, bool]] | None = None
+_held: dict[str, tuple[int, str, bool, tuple[int, ...]]] | None = None
 _roster_generation = 0
 
 
@@ -185,16 +198,17 @@ def forget_roster() -> None:
     _roster_generation += 1
 
 
-async def roster(session) -> dict[str, tuple[int, str, bool]]:
-    """Name to secret version, what standing they have here, and whether they
-    have been switched off."""
+async def roster(session) -> dict[str, tuple[int, str, bool, tuple[int, ...]]]:
+    """Name to secret version, what standing they have here, whether they have
+    been switched off, and whose photographs they see if they are a guest."""
     global _held
     while _held is None:
         generation = _roster_generation
         rows = await session.execute(
-            select(User.name, User.version, User.role, User.disabled))
+            select(User.name, User.version, User.role, User.disabled, User.circle))
         if generation == _roster_generation:
-            _held = {name: (version, role, disabled) for name, version, role, disabled in rows}
+            _held = {name: (version, role, disabled, tuple(circle or ()))
+                     for name, version, role, disabled, circle in rows}
     return _held
 
 
@@ -212,7 +226,7 @@ def whoami(roster: dict, cookie: str | None) -> str | None:
     if said is None:
         return None
     name, version = said
-    known, _, disabled = roster.get(name) or (None, "", True)
+    known, _, disabled, _ = roster.get(name) or (None, "", True, ())
     return name if known == version and not disabled else None
 
 
@@ -227,8 +241,31 @@ def standing(roster: dict, cookie: str | None) -> str | None:
     return roster[name][1] or None
 
 
+def _guest_may(circle: tuple[int, ...], path: str, method: str) -> bool:
+    # the one rule stated as an allowance rather than a refusal, and a guest
+    # changes nothing anywhere: what they were given the address for is
+    # watching and listening
+    return method in SAFE_METHODS and (
+        opus_auth.under(path, GUESTS_MAY) or (bool(circle) and _among(CIRCLE_CALLS, path, method)))
+
+
+def asking(runtime, roster: dict, cookie: str | None, token: str | None,
+           named: str | None) -> str | None:
+    """The person a request is for: the cookie's, or the one the player names."""
+    holder = consumer(runtime, token)
+    if holder is None:
+        return whoami(roster, cookie)
+    return named if holder == "player" else None
+
+
+def circle(roster: dict, name: str | None) -> tuple[int, ...] | None:
+    """The people whose photographs this person sees, or None for the whole album."""
+    known = roster.get(name) if name else None
+    return known[3] if known is not None and known[1] == GUEST else None
+
+
 def allowed(runtime, roster: dict, path: str, cookie: str | None,
-            token: str | None = None, method: str = "GET") -> bool:
+            token: str | None = None, method: str = "GET", named: str | None = None) -> bool:
     """Whether this caller may do this. Whether the request would alter
     something is the only question that separates a user from an admin —
     reading the shared library is what a user is here for."""
@@ -240,7 +277,17 @@ def allowed(runtime, roster: dict, path: str, cookie: str | None,
         return False
     holder = consumer(runtime, token)
     if holder is not None:
-        return CONSUMERS[holder](path, method)
+        if not CONSUMERS[holder](path, method):
+            return False
+        if named is None:
+            return True
+        # asking for somebody only ever takes away from what the token opens,
+        # and a name the roster does not carry, or carries switched off, is
+        # nobody the request may be made for
+        known = roster.get(named)
+        if holder != "player" or known is None or known[2]:
+            return False
+        return known[1] != GUEST or _guest_may(known[3], path, method)
     changes = method not in SAFE_METHODS
     who = standing(roster, cookie)
     if who is None:
@@ -252,10 +299,7 @@ def allowed(runtime, roster: dict, path: str, cookie: str | None,
     if opus_auth.under(path, OWN_ACCOUNT):
         return True
     if who == GUEST:
-        # the one rule stated as an allowance rather than a refusal, and a guest
-        # changes nothing anywhere: what they were given the address for is
-        # watching and listening
-        return opus_auth.under(path, GUESTS_MAY) and not changes
+        return _guest_may(circle(roster, whoami(roster, cookie)) or (), path, method)
     if not changes or opus_auth.under(path, USERS_MAY):
         return True
     return who == ADMIN

@@ -218,7 +218,8 @@ async def add(session, name: str, secret: str, display: str = "",
 async def amend(session, person: User, *, display: str | None = None,
                 secret: str | None = None, role: str | None = None,
                 disabled: bool | None = None,
-                person_id: int | None = None, unlink: bool = False) -> User:
+                person_id: int | None = None, unlink: bool = False,
+                circle: list[int] | None = None) -> User:
     if display is not None:
         person.display = display.strip()
     if role is not None:
@@ -230,6 +231,8 @@ async def amend(session, person: User, *, display: str | None = None,
         person.person_id = None
     elif person_id is not None:
         person.person_id = person_id
+    if circle is not None:
+        person.circle = circle
     if secret:
         person.secret = await hashed(secret)
     if ends_sessions:
@@ -270,4 +273,5 @@ def shown(person: User) -> dict:
         "identity": person.identity,
         # which face in the family library this account is, where it is one
         "person_id": person.person_id,
+        "circle": list(person.circle or ()),
     }

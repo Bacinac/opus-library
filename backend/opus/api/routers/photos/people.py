@@ -22,6 +22,7 @@ from opus import auth
 from opus.api.routers.photos.shared import unmoved
 from opus.db import get_session
 from opus.models import FACE_GENERATION, Person
+from opus.photos import circle as seen
 from opus.photos.people import contacts, lives, naming, portraits
 from opus.settings_store import current_runtime
 
@@ -193,11 +194,13 @@ CACHED = {"Cache-Control": "private, max-age=31536000, immutable"}
 
 
 @router.get("/faces/{face_id}/crop")
-async def face_crop(face_id: int, size: str = Query("face", pattern="^(face|big)$"),
+async def face_crop(face_id: int, request: Request,
+                    size: str = Query("face", pattern="^(face|big)$"),
                     session=Depends(get_session)):
     """One face, cut out of the preview we already keep. Two sizes, because a
     grid of a hundred and twenty-three wants them small and a face that IS the
     screen would be a smear at 256 pixels."""
+    await seen.face(session, face_id, seen.of(request))
     config = await current_runtime()
     kept = await _served(portraits.crop(session, config, face_id, big=size == "big"))
     return FileResponse(kept, media_type="image/jpeg", headers=CACHED)
@@ -214,11 +217,13 @@ async def _admin_asking(request: Request, session=Depends(get_session)) -> bool:
 
 
 @router.get("/people/{person_id}/morph")
-async def morph(person_id: int, size: int = 448, steps: int = portraits.MORPH_STEPS,
+async def morph(person_id: int, request: Request, size: int = 448,
+                steps: int = portraits.MORPH_STEPS,
                 admin: bool = Depends(_admin_asking), session=Depends(get_session)):
     """The run of portraits as one face becoming the next. How it moves is the
     admin's to vary: every other caller gets the one the pages show, so the card
     makes at most one morph per size per person for them."""
+    seen.person(person_id, seen.of(request))
     if size not in portraits.MORPH_SIZES:
         raise HTTPException(
             400, f"a morph is drawn at {' or '.join(map(str, portraits.MORPH_SIZES))}")
@@ -232,15 +237,18 @@ async def morph(person_id: int, size: int = 448, steps: int = portraits.MORPH_ST
 
 
 @router.get("/faces/{face_id}/portrait")
-async def face_portrait(face_id: int, session=Depends(get_session)):
+async def face_portrait(face_id: int, request: Request, session=Depends(get_session)):
+    await seen.face(session, face_id, seen.of(request))
     config = await current_runtime()
     kept = await _served(portraits.portrait(session, config, face_id))
     return FileResponse(kept, media_type="image/jpeg", headers=CACHED)
 
 
 @router.get("/people")
-async def people(session=Depends(get_session)):
-    """Everybody named, with how much of the library they are in."""
+async def people(request: Request, session=Depends(get_session)):
+    """Everybody named, with how much of the library they are in. For a guest
+    with a circle, the circle."""
+    circle = seen.of(request)
     # The groups are counted in their own subquery, not joined in beside the
     # faces. Joined, the two multiply each other and a person with fifty groups
     # is reported as having fifty times her faces — 326,592 of them in a library
@@ -267,10 +275,12 @@ async def people(session=Depends(get_session)):
         FROM photo_people p
         LEFT JOIN photo_faces f ON f.person_id = p.id
         LEFT JOIN photos ph ON ph.id = f.photo_id
+        WHERE CAST(:circle AS integer[]) IS NULL OR p.id = ANY(CAST(:circle AS integer[]))
         GROUP BY p.id, p.name, p.given_name, p.family_name, p.born_on, p.born_source,
                  p.family, p.cover_face_id
         ORDER BY count(f.person_id) DESC, p.family_name, p.given_name
-    """), {"guest": opus_auth.GUEST})).all()
+    """), {"guest": opus_auth.GUEST,
+           "circle": None if circle is None else list(circle)})).all()
     return [{
         "id": pid, "name": name, "given_name": given, "family_name": family,
         "born_on": born.isoformat() if born else None,

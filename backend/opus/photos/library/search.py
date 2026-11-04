@@ -227,16 +227,28 @@ def _alternates(kept: pathlib.Path, places: frozenset[tuple[str, str]]) -> dict:
     return names
 
 
-async def vocabulary(session, root: pathlib.Path) -> Vocabulary:
+async def vocabulary(session, root: pathlib.Path,
+                     circle: tuple[int, ...] | None = None) -> Vocabulary:
+    """The names a search can read. A guest with a circle knows only the
+    circle's people and the places they were photographed, so naming anybody
+    else reads as a word nobody knows rather than a person found nowhere."""
     people: dict[str, set[int]] = {}
-    for id_, name, given, family in (await session.execute(
-            select(Person.id, Person.name, Person.given_name, Person.family_name))).all():
+    named = select(Person.id, Person.name, Person.given_name, Person.family_name)
+    if circle is not None:
+        named = named.where(Person.id.in_(circle))
+    for id_, name, given, family in (await session.execute(named)).all():
         for said in {name, given, family}:
             if fold(said):
                 people.setdefault(fold(said), set()).add(id_)
 
-    stored = frozenset((await session.execute(
-        select(Photo.place, Photo.country).where(Photo.place != "").distinct())).all())
+    def held(query):
+        if circle is None:
+            return query
+        return query.where(select(Face.id).where(
+            Face.photo_id == Photo.id, Face.person_id.in_(circle)).exists())
+
+    stored = frozenset((await session.execute(held(
+        select(Photo.place, Photo.country).where(Photo.place != "")).distinct())).all())
     kept = root / "places" / "cities500.txt"
     elsewhere = await asyncio.to_thread(_alternates, kept, stored) if kept.exists() else {}
     places: dict[str, set[tuple[str, str]]] = {}
@@ -245,8 +257,8 @@ async def vocabulary(session, root: pathlib.Path) -> Vocabulary:
             if fold(said):
                 places.setdefault(fold(said), set()).add(place)
 
-    codes = (await session.execute(
-        select(Photo.country).where(Photo.country != "").distinct())).scalars().all()
+    codes = (await session.execute(held(
+        select(Photo.country).where(Photo.country != "")).distinct())).scalars().all()
     countries = {}
     for language in ("hr", "en"):
         territories = Locale(language).territories

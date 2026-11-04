@@ -14,10 +14,11 @@ TOKENS = {"player": "player-token-0123456789", "downloads": "downloads-token-012
           "cameras": "cameras-token-0123456789"}
 RUNTIME = RuntimeConfig({auth.token_key(name): token for name, token in TOKENS.items()})
 ROSTER = {
-    "boss": (2, "admin", False),
-    "filip": (3, "user", False),
-    "gost": (1, "guest", False),
-    "kata": (5, "user", True),
+    "boss": (2, "admin", False, ()),
+    "filip": (3, "user", False, ()),
+    "gost": (1, "guest", False, ()),
+    "rodjak": (4, "guest", False, (40, 41)),
+    "kata": (5, "user", True, ()),
 }
 
 
@@ -337,3 +338,47 @@ def test_the_api_does_not_describe_itself(clean):
             return [(await client.get(path)).status_code for path in ("/docs", "/redoc", "/openapi.json")]
 
     assert run(scenario()) == [404, 404, 404]
+
+
+def test_a_guest_with_a_circle_reaches_the_album_screens_and_nothing_else_of_it():
+    def may(path, method="GET", who=("rodjak", 4)):
+        return auth.allowed(RUNTIME, ROSTER, path, cookie(*who), method=method)
+
+    for path in ("/api/photos/timeline", "/api/photos/timeline/buckets", "/api/photos/search",
+                 "/api/photos/onthisday", "/api/photos/years", "/api/photos/people",
+                 "/api/photos/places", f"/api/photos/{'a' * 40}", f"/api/photos/{'a' * 40}/preview",
+                 f"/api/photos/{'a' * 40}/play", "/api/photos/faces/7/crop",
+                 "/api/photos/people/7/morph"):
+        assert may(path), path
+    for path in ("/api/photos/vault", "/api/photos/draw", "/api/photos/library",
+                 "/api/photos/clusters", "/api/photos/people/7/faces", "/api/photos/shares"):
+        assert not may(path), path
+    assert not may(f"/api/photos/{'a' * 40}/place", "PUT")
+    # without a circle a guest sees no photograph at all
+    assert not may("/api/photos/timeline", who=("gost", 1))
+    assert may("/api/video/movies", who=("gost", 1))
+
+
+def test_the_player_asking_for_somebody_is_held_to_their_standing():
+    def ask(path, named, method="GET", token=TOKENS["player"]):
+        return auth.allowed(RUNTIME, ROSTER, path, None, token, method, named)
+
+    assert ask("/api/photos/timeline", "rodjak")
+    assert not ask("/api/photos/timeline", "gost")
+    assert not ask("/api/photos/draw", "rodjak")
+    assert not ask("/api/video/movies", "rodjak", "POST")
+    assert ask("/api/video/movies", "filip", "POST")
+    # nobody on the roster, or switched off, is nobody to ask for
+    assert not ask("/api/photos/timeline", "kata")
+    assert not ask("/api/photos/timeline", "nobody")
+    # only the player asks on somebody's behalf
+    assert not ask("/api/photos/people", "filip", token=TOKENS["cameras"])
+
+    def circle(cookie_=None, token=None, named=None):
+        return auth.circle(ROSTER, auth.asking(RUNTIME, ROSTER, cookie_, token, named))
+
+    assert circle(token=TOKENS["player"], named="rodjak") == (40, 41)
+    assert circle(token=TOKENS["player"], named="filip") is None
+    assert circle(token=TOKENS["player"]) is None
+    assert circle(cookie_=cookie("rodjak", 4)) == (40, 41)
+    assert circle(cookie_=cookie("boss", 2)) is None

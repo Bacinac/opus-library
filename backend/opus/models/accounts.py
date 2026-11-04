@@ -21,6 +21,7 @@ import secrets
 from opus_auth import ADMIN, GUEST, USER
 from sqlalchemy import (Boolean, DateTime, ForeignKey, Integer, LargeBinary, String,
                         Text, case, func)
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from opus.models.base import Base
@@ -60,6 +61,11 @@ class User(Base):
     # the photographs will ever sign in.
     person_id: Mapped[int | None] = mapped_column(
         ForeignKey("photo_people.id", ondelete="SET NULL"), nullable=True, unique=True)
+    # A guest who is family, though not the household's: a cousin with a box of
+    # his own sees the photographs somebody of these people is in, and no others.
+    # Read only for a guest; whoever lives here sees the whole album anyway.
+    circle: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), default=list, server_default="{}")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -104,6 +110,12 @@ class Device(Base):
     # what the person who let it in called it. "The one in the living room" is
     # worth more than any fingerprint when the question is which to take back
     name: Mapped[str] = mapped_column(String(64), default="")
+    # whose box this is, when it is not the household's: it is then that person
+    # on the sofa whoever picks up the remote, with their standing and nobody
+    # else's profile. Removing the person takes the box back with them rather
+    # than leaving it the household's.
+    person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     # who said yes, kept because it is the only record of that decision
     let_in_by: Mapped[str] = mapped_column(String(64), default="")
     let_in_at: Mapped[datetime.datetime | None] = mapped_column(

@@ -35,6 +35,7 @@ from opus.models import (
     Photo,
     PhotoFile,
 )
+from opus.photos import circle as seen
 from opus.photos import pipeline, room
 from opus.photos.library import derive, metadata, offers, scan
 from opus.photos.people import cluster, focus
@@ -171,13 +172,13 @@ async def library_derive_cancel():
 
 
 @router.get("/{checksum}/tile")
-async def photo_tile(checksum: str, session=Depends(get_session)):
-    return await _serve(session, checksum, 0)
+async def photo_tile(checksum: str, request: Request, session=Depends(get_session)):
+    return await _serve(session, checksum, 0, seen.of(request))
 
 
 @router.get("/{checksum}/preview")
-async def photo_preview(checksum: str, session=Depends(get_session)):
-    return await _serve(session, checksum, 1)
+async def photo_preview(checksum: str, request: Request, session=Depends(get_session)):
+    return await _serve(session, checksum, 1, seen.of(request))
 
 
 # what a browser will play without being asked twice
@@ -186,7 +187,7 @@ PLAYS = {".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/x-m4v",
          ".wmv": "video/x-ms-asf", ".3gp": "video/3gpp"}
 
 
-async def _recording(session, checksum: str) -> Path:
+async def _recording(session, checksum: str, circle: tuple[int, ...] | None) -> Path:
     try:
         digest = bytes.fromhex(checksum)
     except ValueError:
@@ -196,6 +197,7 @@ async def _recording(session, checksum: str) -> Path:
         .where(Photo.checksum == digest))).scalar_one_or_none()
     if photo is None:
         raise HTTPException(404, "no such photograph")
+    await seen.sees(session, photo.id, circle)
     live = [f for f in photo.files if f.state == FILE_PRESENT]
     if not live:
         raise HTTPException(404, "the file is not where the catalogue left it")
@@ -203,7 +205,7 @@ async def _recording(session, checksum: str) -> Path:
 
 
 @router.get("/{checksum}/play")
-async def play(checksum: str, session=Depends(get_session)):
+async def play(checksum: str, request: Request, session=Depends(get_session)):
     """The recording itself, for a player to scrub through.
 
     The shelf holds five hundred and forty-eight of these and had no way to hand
@@ -214,19 +216,19 @@ async def play(checksum: str, session=Depends(get_session)):
     Ranges are the point. Without them a player must have the whole file before
     it can show the middle of it, which for a minute of 4K is a wait nobody sits
     through — and FileResponse answers them itself."""
-    path = await _recording(session, checksum)
+    path = await _recording(session, checksum, seen.of(request))
     return FileResponse(
         path, media_type=PLAYS.get(path.suffix.lower(), "application/octet-stream"),
         headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @router.get("/{checksum}/playback")
-async def playback(checksum: str, session=Depends(get_session)):
+async def playback(checksum: str, request: Request, session=Depends(get_session)):
     """What the recording is, in the shape a film's playback carries, for a
     player that has to decide whether a screen takes it as it is. Read from the
     file when asked: a household clip is read in a moment, and a DivX from 2005
     or an iPhone's HEVC with PCM sound is not something a browser opens."""
-    path = await _recording(session, checksum)
+    path = await _recording(session, checksum, seen.of(request))
     try:
         info = await probe_file(path)
     except ProbeError as exc:
@@ -235,7 +237,7 @@ async def playback(checksum: str, session=Depends(get_session)):
         "container", "video_codec", "width", "height", "duration_s", "streams")}}
 
 
-async def _serve(session, checksum: str, which: int):
+async def _serve(session, checksum: str, which: int, circle: tuple[int, ...] | None):
     """A derivative that is not there is a 404 that says which one and why —
     never an empty response that looks like an empty library.
 
@@ -250,6 +252,7 @@ async def _serve(session, checksum: str, which: int):
         digest = bytes.fromhex(checksum)
     except ValueError:
         raise HTTPException(400, "not a checksum")
+    await seen.holds(session, digest, circle)
     config = await current_runtime()
     path = derive.paths_for(derive.store_root(config), digest)[which]
     if path.exists():
