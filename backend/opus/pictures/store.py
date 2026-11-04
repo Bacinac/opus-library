@@ -342,6 +342,8 @@ def _derive(original: Path, target: Path, width: int, clear: bool) -> None:
 # ---------------------------------------------------------------------- rows
 
 _holding: "weakref.WeakValueDictionary[int, asyncio.Lock]" = weakref.WeakValueDictionary()
+# one derivation per file: two at once would share one staging name
+_making: "weakref.WeakValueDictionary[Path, asyncio.Lock]" = weakref.WeakValueDictionary()
 
 
 def _later(tries: int, wait: float | None) -> datetime.datetime:
@@ -423,9 +425,13 @@ async def sized(picture: Picture, asked: int) -> tuple[Path, str]:
     stamp = await asyncio.to_thread(_stamp, original)
     target = _sized_path(picture.id, width, stamp, clear)
     if not target.exists():
-        async with _deriving:
+        making = _making.get(target)
+        if making is None:
+            making = _making[target] = asyncio.Lock()
+        async with making:
             if not target.exists():
-                await asyncio.to_thread(_derive, original, target, width, clear)
+                async with _deriving:
+                    await asyncio.to_thread(_derive, original, target, width, clear)
     return target, "image/webp" if clear else "image/jpeg"
 
 

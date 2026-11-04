@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 
 import httpx
@@ -156,6 +157,23 @@ def test_a_picture_is_taken_once_and_drawn_at_the_width_asked(held, monkeypatch)
     assert asked == [DEEZER.replace("/250x250-", "/1000x1000-")]
     row = run(_row(picture_id))
     assert (row.state, row.width, row.kind) == (HELD, 1000, "image/jpeg")
+
+
+def test_two_screens_asking_for_one_new_size_at_once_both_get_it(held, monkeypatch):
+    answering(monkeypatch, lambda request: httpx.Response(
+        200, headers={"content-type": "image/jpeg"}, content=jpeg(1000, 1500)))
+
+    async def scenario():
+        cookie = await signed_in("ivo")
+        picture_id = await _picture(DEEZER)
+        async with library(cookie) as client:
+            await client.get(f"/api/pictures/{picture_id}", params={"w": 320})
+            return await asyncio.gather(*(client.get(f"/api/pictures/{picture_id}", params={"w": 640})
+                                          for _ in range(4)))
+
+    answers = run(scenario())
+    assert [answer.status_code for answer in answers] == [200] * 4
+    assert {pyvips.Image.new_from_buffer(answer.content, "").width for answer in answers} == {640}
 
 
 def test_a_larger_size_the_source_refuses_falls_back_to_the_address_given(held, monkeypatch):
