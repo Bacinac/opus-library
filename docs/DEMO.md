@@ -11,8 +11,8 @@ The public demo is three independent static origins, one per module:
 Each is the production Svelte application with a synthetic API loaded before
 the application starts. The household inside is invented: the Kovač family,
 six artists with twelve albums, eight films and a series, thirty-two
-photographs from seven places, the people in them, a download queue, accounts
-and devices.
+photographs from seven places, the people in them, a quiz over those
+photographs, a download queue, accounts and devices.
 No request can reach an OPUS backend. Changes live only in the current browser
 tab and disappear on reload. The demo speaks English until the visitor picks
 another language, and signs in as the fictional administrator `demo`; it never
@@ -50,6 +50,13 @@ and shown at `/demo-credits.html` in the Library and Player demos.
 Posters are the films' own where one exists; for Elephants Dream, Spring,
 Agent 327 and Caminandes a frame was cropped and the title set over it.
 
+Every film, episode and song in the Player demo plays the same clip,
+`media/film/bbb-clip.mp4`: twenty seconds from 1:00 of Big Buck Bunny's
+640×360 release, cut without re-encoding. Its score has no words, so a song's
+lyrics say it is instrumental. The places map draws OpenStreetMap's tiles
+(© OpenStreetMap contributors, ODbL), which the Player demo's `_redirects`
+sends straight to `tile.openstreetmap.org`.
+
 The photographs are CC0 works from Wikimedia Commons by Jebulon, Wilfredor,
 DimiTalen, Benoît Prieur, Bernard Gagnon, Peter Cooper Jr., Romzig, W.carter,
 Gestumblindi, Vassil, Velatrix, Dktue and Roc0ast3r; their dates and places in
@@ -62,7 +69,8 @@ person. The artists, records and household are fictional.
 ## Build and publish
 
 ```bash
-./deploy/demo.sh            # build + gate into release/demo/{player,library,downloads}
+./deploy/demo.sh            # build, walk and gate into release/demo/{player,library,downloads}
+./deploy/demo.sh --shots    # also retake each module's docs/screenshots
 ./deploy/demo.sh --deploy   # additionally publish the three Pages projects
 ```
 
@@ -73,6 +81,20 @@ Every module links to the other two by their public origin; override
 `OPUS_DEMO_PLAYER_URL`, `OPUS_DEMO_LIBRARY_URL` and `OPUS_DEMO_DOWNLOADS_URL`
 to build for other origins. The Player demo serves the signed OPUS TV and OPUS
 Music APKs from `opus-player/android/dist`, as an installed Player does.
+
+After the build, `deploy/demo-walk/walk.mjs` opens all three in Chromium (the
+Playwright image, its packages from `demo-walk/package-lock.json`), the Player
+a second time as a television, visits every page reachable from each module's
+routes and their links, and presses what only a press reaches: a film's Play
+and Details, an episode, a song, a place, a quiz round. A question the
+synthetic API cannot answer, a missing picture or font, a page error or a
+request leaving the demo fails the build and names the page it was on.
+
+`--shots` then retakes each module's `docs/screenshots` from the same pages:
+four stills at 1920×1200 (the Player's television as the 960-wide page a box
+draws), the animated `tour.webp`, and `social-preview.png`, which is also the
+card a link to the demo unfolds into. They are drawn in Roboto, the face every
+Android phone and television gives the interface's system font.
 
 Before anything can be published, every built file goes through the clone's
 `publicgate.command`; a clone without one does not build the demo at all.

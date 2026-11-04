@@ -123,13 +123,14 @@
 		if (path === '/api/auth/logout' || path === '/api/auth/login') return answer({ ok: true });
 		if (path === '/api/auth/token') return answer({ token: method === 'POST' ? 'opus_demo_new_token' : 'opus_demo_service_token' });
 		if (path === '/api/auth/people' && method === 'GET') return answer({ people: [
-			{ name: 'demo', display: 'Demo administrator', role: 'admin', disabled: false },
-			{ name: 'family', display: 'Family member', role: 'user', disabled: false },
-			{ name: 'gost', display: 'Guest', role: 'guest', disabled: false }
+			{ name: 'demo', display: 'Demo administrator', role: 'admin', disabled: false, person_id: null, circle: [] },
+			{ name: 'family', display: 'Family member', role: 'user', disabled: false, person_id: 42, circle: [] },
+			{ name: 'gost', display: 'Guest', role: 'guest', disabled: false, person_id: null, circle: [45, 46] }
 		] });
-		if (path === '/api/auth/people' && method === 'POST') return answer({ name: body.name, display: body.display || body.name, role: body.role, disabled: false });
+		if (path === '/api/auth/people' && method === 'POST') return answer({ name: body.name, display: body.display || body.name, role: body.role, disabled: false, person_id: null, circle: [] });
 		if (path === '/api/auth/devices' && method === 'GET') return answer({ devices: [
-			{ id: 1, name: 'Living room', module: 'player', collected: true, let_in_by: 'demo', let_in_at: '2026-09-01T18:00:00Z', seen_at: '2026-09-19T08:40:00Z' }
+			{ id: 1, name: 'Living room', module: 'player', collected: true, let_in_by: 'demo', let_in_at: '2026-09-01T18:00:00Z', seen_at: '2026-09-19T08:40:00Z', app: 'v1.0.65', person: null },
+			{ id: 2, name: 'Guest room', module: 'player', collected: true, let_in_by: 'demo', let_in_at: '2026-09-12T16:30:00Z', seen_at: '2026-09-18T21:05:00Z', app: 'v1.0.64', person: 'gost' }
 		] });
 		if (path === '/api/auth/devices' && method === 'POST') return answer({ name: body.name || 'New device' });
 		if (path === '/api/auth/password' || path.startsWith('/api/auth/people/') || path.startsWith('/api/auth/devices/')) return answer({ ok: true });
