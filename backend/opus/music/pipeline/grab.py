@@ -20,13 +20,13 @@ from opus.music.pipeline import choose, state
 log = logging.getLogger("opus.music.pipeline")
 
 
-# an incomplete whole-album grab auto-recovers (another NZB, then another channel);
-# cap total downloads per release so a gap nothing can fill never loops forever
+# a failed or incomplete whole-album grab auto-recovers (another NZB, then another
+# channel); cap total downloads per release so a gap nothing can fill never loops forever
 MAX_RECOVERY_DOWNLOADS = 6
 
 
-def spawn_grab(release_id: int, mode: str = "full"):
-    passes.spawn(grab_release(release_id, mode))
+def spawn_grab(release_id: int, mode: str = "full", *, recovery: bool = False):
+    passes.spawn(grab_release(release_id, mode, recovery=recovery))
 
 
 # a mass redownload must not fire dozens of simultaneous searches at
@@ -70,7 +70,7 @@ async def grab_candidate(release_id: int, channel_name: str, title: str, ref: di
     return await _record_download(release_id, channel_name, best, mode, job_ref)
 
 
-async def grab_release(release_id: int, mode: str = "full"):
+async def grab_release(release_id: int, mode: str = "full", *, recovery: bool = False):
     """An album is one edition from one source at a time.
 
     full: acquire it. replace: the same search, but the download is discarded at
@@ -83,9 +83,12 @@ async def grab_release(release_id: int, mode: str = "full"):
 
     There is deliberately no way to fetch only the missing tracks of an edition:
     two rips of one album differ in mastering and level even at identical specs,
-    and stitching them is what made albums sound uneven."""
+    and stitching them is what made albums sound uneven.
+
+    recovery: the pipeline asking again after its own download failed, rather
+    than a person asking. A replace is always one."""
     try:
-        await _grab_release(release_id, mode)
+        await _grab_release(release_id, mode, recovery)
     except Exception:
         log.exception("grab of release %s failed", release_id)
         await settle_interrupted(release_id)
@@ -111,13 +114,13 @@ async def settle_interrupted(release_id: int | None = None) -> None:
                     ", ".join(str(row_id) for row_id, _ in rows))
 
 
-async def _grab_release(release_id: int, mode: str):
-    automatic = mode == "replace"
+async def _grab_release(release_id: int, mode: str, recovery: bool):
+    automatic = recovery or mode == "replace"
     brief = await choose.brief(release_id, automatic)
     if brief is None:
         return
     if automatic and brief.download_count >= MAX_RECOVERY_DOWNLOADS:
-        await _leave_partial(release_id)
+        await _stop_recovering(release_id, mode)
         return
     for channel in choose.channels_to_ask(brief.config, automatic):
         if channel.name in brief.failed_channels:
@@ -133,7 +136,7 @@ async def _grab_release(release_id: int, mode: str):
             return
         if await _start_download(release_id, channel, best, mode):
             return
-    await _settle_unfound(release_id, automatic)
+    await _settle_unfound(release_id, mode)
 
 
 async def _still_there(release_id: int) -> bool:
@@ -151,12 +154,14 @@ async def _set_status(release_id: int, status: ReleaseStatus) -> bool:
     return True
 
 
-async def _leave_partial(release_id: int) -> None:
-    if not await _set_status(release_id, ReleaseStatus.NONE):
+async def _stop_recovering(release_id: int, mode: str) -> None:
+    partial = mode == "replace"
+    if not await _set_status(release_id,
+                             ReleaseStatus.NONE if partial else ReleaseStatus.FAILED):
         log.info("release %s: deleted while it was being searched", release_id)
         return
-    log.info("release %s: recovery cap (%d) reached, leaving album partial",
-             release_id, MAX_RECOVERY_DOWNLOADS)
+    log.info("release %s: recovery cap (%d) reached, %s", release_id, MAX_RECOVERY_DOWNLOADS,
+             "leaving album partial" if partial else "no further source is tried")
 
 
 async def _start_download(release_id: int, channel: Channel, best: ScoredCandidate,
@@ -206,14 +211,15 @@ async def _drop_orphan(release_id: int, channel: Channel, job_ref: dict) -> None
              release_id, job_ref.get("job"))
 
 
-async def _settle_unfound(release_id: int, automatic: bool) -> None:
-    # recovery keeps whatever was already imported; only a from-scratch grab
-    # with nothing anywhere is a hard failure
-    status = ReleaseStatus.NONE if automatic else ReleaseStatus.FAILED
+async def _settle_unfound(release_id: int, mode: str) -> None:
+    # a replacement keeps whatever was already imported; only a grab with
+    # nothing anywhere is a hard failure
+    kept = mode == "replace"
+    status = ReleaseStatus.NONE if kept else ReleaseStatus.FAILED
     if not await _set_status(release_id, status):
         log.info("release %s: deleted while it was being searched", release_id)
         return
-    if automatic:
+    if kept:
         log.info("release %s: no source carries the whole album, left as it was",
                  release_id)
     else:
@@ -258,4 +264,4 @@ async def _settle(download_id: int, status: MusicDownloadStatus, detail: str):
     # this release, and settles on FAILED only once every channel is exhausted.
     # An album that already holds files wants a REPLACEMENT, never a patch
     # from a second source.
-    spawn_grab(release_id, mode="replace" if held else "full")
+    spawn_grab(release_id, mode="replace" if held else "full", recovery=True)

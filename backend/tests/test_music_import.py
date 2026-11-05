@@ -81,8 +81,8 @@ class Import:
     async def _cleanup(self, download_id, channel, job_ref, config):
         self.said.append(("cleanup", download_id, Path(job_ref["directory"]).name))
 
-    def _grab(self, release_id, mode="full"):
-        self.said.append(("grab", release_id, mode))
+    def _grab(self, release_id, mode="full", *, recovery=False):
+        self.said.append(("grab", release_id, mode, recovery))
 
     async def _edition(self, release_id, artist_name, album_title, plan, config):
         self.said.append(("edition", release_id, plan.matched))
@@ -212,7 +212,7 @@ def test_one_album_is_one_mix(importing):
                                 "one album is one mix: this download is mono and stereo")
     assert said["release"] == (ReleaseStatus.FAILED, None)
     assert said["files"] == []
-    assert importing.said == [("grab", release_id, "full")]
+    assert importing.said == [("grab", release_id, "full", True)]
 
 
 def test_a_surround_edition_must_be_surround(importing):
@@ -304,7 +304,7 @@ def test_a_replacement_must_be_whole(importing):
     said = run(importing.outcome(download_id, release_id))
     assert said["download"] == (MusicDownloadStatus.REJECTED,
                                 "would leave 1 of 3 tracks unfilled — not a replacement")
-    assert importing.said == [("grab", release_id, "full")]
+    assert importing.said == [("grab", release_id, "full", True)]
 
 
 def test_a_lossless_profile_refuses_a_transcode(importing):
@@ -330,7 +330,7 @@ def test_a_short_download_is_filed_and_the_rest_is_hunted(importing):
     assert said["release"] == (ReleaseStatus.NONE, None)
     assert [f[1] for f in said["files"]] == ["Morning", "Night"]
     assert importing.said == [("edition", release_id, 2), ("cleanup", download_id, "job-1"),
-                              ("grab", release_id, "replace")]
+                              ("grab", release_id, "replace", False)]
 
 
 def test_a_different_pressing_becomes_the_record(importing):
@@ -358,7 +358,7 @@ def test_a_subset_pressing_keeps_only_its_tracks(importing):
     said = run(importing.outcome(download_id, release_id))
     assert said["release"] == (ReleaseStatus.COMPLETE, 2)
     assert said["tracks"] == [(1, "Morning"), (3, "Night")]
-    assert ("grab", release_id, "replace") not in importing.said
+    assert ("grab", release_id, "replace", False) not in importing.said
 
 
 def test_a_fresh_file_supersedes_its_own_edition_only(importing):
@@ -442,7 +442,7 @@ def test_a_different_mix_than_the_shelf_holds_is_refused(importing):
     assert said["download"] == (MusicDownloadStatus.REJECTED,
                                 "one album is one mix: this download is 5.1 but the release holds stereo")
     assert said["release"] == (ReleaseStatus.NONE, None)
-    assert importing.said == [("grab", release_id, "replace")]
+    assert importing.said == [("grab", release_id, "replace", True)]
 
 
 def test_the_cover_and_the_portrait_go_with_the_files(importing, monkeypatch):

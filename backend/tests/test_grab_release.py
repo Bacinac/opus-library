@@ -9,7 +9,7 @@ from opus.acquire import AcquireError
 from opus.models import (Artist, MusicDownload, MusicDownloadStatus, Release, ReleaseStatus,
                          Track)
 from opus.music.pipeline import choose, state
-from opus.music.pipeline.grab import MAX_RECOVERY_DOWNLOADS, _leave_partial, grab_release
+from opus.music.pipeline.grab import MAX_RECOVERY_DOWNLOADS, _stop_recovering, grab_release
 from opus.music.channels.base import Candidate, CandidateFile, Contents
 from opus.music.metadata import tracklists
 
@@ -111,10 +111,10 @@ async def _downloads(release_id: int) -> list[MusicDownload]:
             .order_by(MusicDownload.id))).scalars())
 
 
-def _grab(release_id: int, mode: str = "full") -> tuple:
+def _grab(release_id: int, mode: str = "full", recovery: bool = False) -> tuple:
     async def scenario():
         before = {d.id for d in await _downloads(release_id)}
-        await grab_release(release_id, mode)
+        await grab_release(release_id, mode, recovery=recovery)
         async with db.SessionLocal() as session:
             release = await session.get(Release, release_id)
         return (release.status if release else None), [
@@ -176,6 +176,27 @@ def test_a_person_asking_again_has_a_dead_source_asked_again(grab):
     assert [(d[0], d[2]["job"]) for d in downloads] == [("slskd", "user:Record")]
 
 
+def test_a_failed_download_falls_through_past_the_source_that_failed(grab):
+    release_id = run(_release(("slskd", MusicDownloadStatus.REJECTED, None)))
+    grab.channel("slskd", post("slskd", "user:Record"))
+    grab.channel("sabnzbd", post("sabnzbd", "Somebody-Record"), partial=False)
+
+    status, downloads = _grab(release_id, recovery=True)
+
+    assert grab.searched() == ["sabnzbd"]
+    assert status == ReleaseStatus.DOWNLOADING
+    assert [(d[0], d[2]["job"], d[2]["mode"]) for d in downloads] == [
+        ("sabnzbd", "Somebody-Record", "full")]
+
+
+def test_a_failed_download_with_no_source_left_fails_the_album(grab):
+    release_id = run(_release(("slskd", MusicDownloadStatus.REJECTED, None)))
+    grab.channel("slskd", post("slskd", "user:Record"))
+
+    assert _grab(release_id, recovery=True) == (ReleaseStatus.FAILED, [])
+    assert grab.searched() == []
+
+
 def test_a_recovery_asks_whole_album_channels_first_for_a_post_not_yet_pulled(grab):
     release_id = run(_release(("sabnzbd", MusicDownloadStatus.COMPLETE, "Somebody-Record-Good")))
     grab.channel("slskd", post("slskd", "user:Record"))
@@ -198,6 +219,7 @@ def test_a_recovery_stops_at_the_cap_and_a_grab_does_not(grab):
     grab.channel("slskd", post("slskd", "user:Record"))
 
     assert _grab(capped, "replace") == (ReleaseStatus.NONE, [])
+    assert _grab(capped, "full", recovery=True) == (ReleaseStatus.FAILED, [])
     assert grab.searched() == []
 
     status, downloads = _grab(capped, "full")
@@ -340,7 +362,7 @@ def test_a_job_that_cannot_be_dropped_is_named(grab, caplog):
 def test_a_recovery_cap_on_a_vanished_release_is_no_failure(clean, caplog):
     caplog.set_level(logging.INFO, logger="opus.music.pipeline")
 
-    run(_leave_partial(987654))
+    run(_stop_recovering(987654, "replace"))
 
     assert _said(caplog) == [
         ("INFO", "release 987654: deleted while it was being searched", False)]
