@@ -64,6 +64,8 @@
 	let next = $state<string | null>(null);
 	let started = $state(false);
 	let loading = $state(false);
+	let read = $state(false);
+	let failed = $state(false);
 	let naming = $state('');
 	let refusal = $state<Refusal | null>(null);
 	let handedBack = $state(0);
@@ -127,6 +129,7 @@
 		const id = cluster;
 		untrack(() => {
 			total = 0;
+			read = false;
 			naming = '';
 			refusal = null;
 			handedBack = 0;
@@ -149,16 +152,21 @@
 	async function more() {
 		if (loading || (started && next === null)) return;
 		loading = true;
+		failed = false;
 		const id = cluster;
 		const q = new URLSearchParams({ limit: '200' });
 		if (next) q.set('after', next);
 		const d = await request<Page>(`/api/photos/clusters/${id}?${q}`);
 		loading = false;
-		if (!d || id !== cluster) {
-			started = true;
-			next = null;
+		if (id !== cluster) {
+			again();
 			return;
 		}
+		if (!d) {
+			failed = true;
+			return;
+		}
+		read = true;
 		total = d.faces_total;
 		years = d.years;
 		person = d.person;
@@ -186,7 +194,7 @@
 		if (!sheet) return;
 		scrolled = sheet.scrollTop;
 		sheetHeight = sheet.clientHeight;
-		if (sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 600) more();
+		if (!failed && sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 600) more();
 	}
 
 	const span = $derived(
@@ -259,21 +267,25 @@
 
 <Dialog
 	size="full"
-	title={[plural(total, 'people.faces.one', 'people.faces.few', 'people.faces.many'), span]
-		.filter(Boolean)
-		.join(' · ')}
+	title={read
+		? [plural(total, 'people.faces.one', 'people.faces.few', 'people.faces.many'), span]
+				.filter(Boolean)
+				.join(' · ')
+		: failed
+			? t('people.unread')
+			: t('common.loading')}
 	subtitle={faces.length < total ? t('people.shown', { n: formatNumber(faces.length) }) : ''}
 	{onclose}
 	onescape={() => (picked.size ? (picked = new Set()) : onclose())}
 >
 	{#snippet actions()}
-		{#if me.admin}
+		{#if me.admin && read}
 			<ArmedButton size="small" onconfirm={discard}>{t('people.discard')}</ArmedButton>
 		{/if}
 	{/snippet}
 
 	<div class="sheet">
-		{#if me.admin}
+		{#if me.admin && read}
 			<div class="name">
 				{#if person}
 					<strong>{person.name}</strong>
@@ -362,10 +374,10 @@
 				</figure>
 			{/each}
 			<div class="pad" style:height="{padBottom}px"></div>
-			{#if next !== null}
+			{#if next !== null || failed}
 				<div class="rest">
 					<Button size="small" onclick={() => more()} disabled={loading}>
-						{loading ? t('common.loading') : t('people.more')}
+						{loading ? t('common.loading') : failed ? t('people.again') : t('people.more')}
 					</Button>
 				</div>
 			{/if}

@@ -11,6 +11,7 @@ dates, which is the whole reason "Jana 2008–2013" needs no field.
 """
 
 import datetime
+from typing import Literal
 
 import opus_auth
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -68,14 +69,21 @@ async def clusters(
     after: int = Query(0, ge=0),
     named: bool | None = None,
     min_size: int = Query(2, ge=1),
+    max_size: int | None = Query(None, ge=1),
+    sort: Literal["size", "new"] = "size",
     session=Depends(get_session),
 ):
-    """The groups, largest first. Singletons are excluded by default: 27,432 of
-    them is not a wall anybody reads, and a face alone is not yet a likeness."""
+    """The groups, largest first or those whose first photograph reached the
+    library last. Singletons are excluded by default: 27,432 of them is not a
+    wall anybody reads, and a face alone is not yet a likeness."""
     where = ["f.generation = :gen", "f.cluster_id IS NOT NULL"]
     params: dict = {"gen": FACE_GENERATION, "limit": limit, "min": min_size,
                     "after": after}
     having = "count(*) >= :min"
+    if max_size is not None:
+        having += " AND count(*) <= :max"
+        params["max"] = max_size
+    order = "first_seen DESC" if sort == "new" else "faces DESC"
     if named is True:
         where.append("c.person_id IS NOT NULL")
     elif named is False:
@@ -86,6 +94,7 @@ async def clusters(
                count(*) AS faces,
                min(EXTRACT(YEAR FROM ph.taken_at))::int AS first_year,
                max(EXTRACT(YEAR FROM ph.taken_at))::int AS last_year,
+               min(ph.first_seen_at) AS first_seen,
                (SELECT f2.id FROM photo_faces f2
                  WHERE f2.cluster_id = c.id ORDER BY f2.score DESC LIMIT 1) AS cover
         FROM photo_face_clusters c
@@ -95,7 +104,7 @@ async def clusters(
         WHERE {' AND '.join(where)}
         GROUP BY c.id, c.person_id, p.name
         HAVING {having}
-        ORDER BY count(*) DESC, c.id
+        ORDER BY {order}, c.id
         OFFSET :after LIMIT :limit
     """), params)).all()
 
@@ -105,8 +114,9 @@ async def clusters(
             "person": {"id": pid, "name": name} if pid else None,
             "faces": n,
             "years": [y1, y2],
+            "first_seen": first_seen.isoformat(),
             "cover": cover,
-        } for cid, pid, name, n, y1, y2, cover in rows],
+        } for cid, pid, name, n, y1, y2, first_seen, cover in rows],
         "next": after + len(rows) if len(rows) == limit else None,
     }
 

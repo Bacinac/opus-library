@@ -151,9 +151,7 @@
 {:else if view === 'shared'}
 	<Shares />
 {:else}
-	{#key stamp}
-		<Nameless onopen={(id) => (open = id)} />
-	{/key}
+	<Nameless {stamp} onopen={(id) => (open = id)} />
 {/if}
 
 {#if sharing && chosen}

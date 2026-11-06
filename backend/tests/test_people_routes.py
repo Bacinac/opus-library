@@ -1,12 +1,12 @@
 import datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from conftest import library, run, signed_in
 from opus import db, settings_store
-from opus.models import Face, FaceCluster, Person, Setting
+from opus.models import Face, FaceCluster, Person, Photo, Setting
 from opus.photos.people import cluster
 from scene import Scene
 
@@ -254,3 +254,35 @@ def test_the_leanings_of_a_group_name_who_each_face_is_nearer(household):
         assert set(leaning) == {"face", "person_id", "name", "sim", "margin"}
         assert leaning["margin"] >= 0.05
     assert sum(p["faces"] for p in said["people"]) == len(said["leanings"])
+
+
+def test_nameless_groups_narrow_to_one_face_and_sort_by_arrival(household):
+    async def scenario():
+        long_ago = datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
+        today = datetime.datetime(2026, 11, 6, tzinfo=datetime.UTC)
+        async with db.SessionLocal() as session:
+            face = (await session.execute(
+                select(Face).where(Face.cluster_id.is_not(None)).order_by(Face.id).limit(1)
+            )).scalar_one()
+            lone = FaceCluster()
+            session.add(lone)
+            await session.flush()
+            lone_id = lone.id
+            face.cluster_id = lone_id
+            await session.execute(update(Photo).values(first_seen_at=long_ago))
+            await session.execute(update(Photo).where(Photo.id == face.photo_id)
+                                  .values(first_seen_at=today))
+            await session.commit()
+        query = {"named": "false", "min_size": 1, "sort": "new"}
+        async with library(await signed_in("boss")) as client:
+            everyone = await client.get("/api/photos/clusters", params=query)
+            once = await client.get("/api/photos/clusters", params={**query, "max_size": 1})
+        return lone_id, everyone.json()["clusters"], once.json()["clusters"]
+
+    lone_id, everyone, once = run(scenario())
+
+    assert everyone[0]["id"] == lone_id
+    assert everyone[0]["first_seen"].startswith("2026-11-06")
+    assert len(everyone) > len(once)
+    assert once[0]["id"] == lone_id
+    assert {group["faces"] for group in once} == {1}
