@@ -97,11 +97,13 @@ def _is_epoch(y: int, mo: int) -> bool:
 
 # What a date in a filename looks like once the archive is actually read:
 # "20130706-154433-181.83 KB.jpg", "20251109_113514.jpg", "IMG_20130706_154433.jpg",
-# "PHOTO-2024-11-10-00-12-27.jpg", "2013-07-06 15.44.33.jpg"
+# "PHOTO-2024-11-10-00-12-27.jpg", "2013-07-06 15.44.33.jpg",
+# "WhatsApp Image 2024-01-15 at 18.22.31.jpeg", "IMG-20240115-WA0012.jpg"
 FILENAME_DATES = (
     re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})[-_ ]?(\d{2})(\d{2})(\d{2})(?!\d)"),
-    re.compile(r"(?<!\d)(\d{4})[-.](\d{2})[-.](\d{2})[-_ T]+(\d{2})[-.:](\d{2})[-.:](\d{2})(?!\d)"),
+    re.compile(r"(?<!\d)(\d{4})[-.](\d{2})[-.](\d{2})(?:[-_ T]+| at )(\d{2})[-.:](\d{2})[-.:](\d{2})(?!\d)"),
     re.compile(r"(?<!\d)(\d{4})[-.](\d{2})[-.](\d{2})(?!\d)"),
+    re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})-WA\d"),
 )
 
 EXIF_DT = re.compile(r"^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})")

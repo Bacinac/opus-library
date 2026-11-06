@@ -90,3 +90,14 @@ def test_every_photograph_is_dated_by_the_best_answer_it_has(clean, monkeypatch)
     assert counts == {"total": 8, "processed": 8, "dated": 6, "from_exif": 2,
                       "from_filename": 2, "from_path": 1, "from_mtime": 1, "undated": 1,
                       "paired": 1}
+
+
+def test_whatsapp_names_are_dated():
+    zone = ZoneInfo("Europe/Zagreb")
+    assert metadata._from_filename("IMG-20240115-WA0012.jpg", zone) == datetime.datetime(
+        2024, 1, 15, tzinfo=zone)
+    assert metadata._from_filename("VID-20240115-WA0003.mp4", zone) == datetime.datetime(
+        2024, 1, 15, tzinfo=zone)
+    assert metadata._from_filename(
+        "WhatsApp Image 2024-01-15 at 18.22.31 (1).jpeg", zone) == datetime.datetime(
+        2024, 1, 15, 18, 22, 31, tzinfo=zone)
