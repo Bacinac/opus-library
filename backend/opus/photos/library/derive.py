@@ -92,8 +92,13 @@ def prepare_store(root: Path) -> None:
     ZFS snapshots cannot be told anything at all."""
     for sub in ("tile", "preview", ".incoming"):
         (root / sub).mkdir(parents=True, exist_ok=True)
-    (root / "CACHEDIR.TAG").write_text(CACHEDIR_TAG)
-    (root / ".pxarexclude").write_text("*\n")
+    for name, says in (("CACHEDIR.TAG", CACHEDIR_TAG), (".pxarexclude", "*\n")):
+        path = root / name
+        # a marker already saying this is left alone: one written while the
+        # service still ran as root cannot be rewritten by it now, and nothing
+        # about the store depends on rewriting it
+        if not path.exists() or path.read_text() != says:
+            path.write_text(says)
 
 
 def paths_for(root: Path, checksum: bytes) -> tuple[Path, Path]:

@@ -314,3 +314,26 @@ def test_filing_cut_off_after_the_link_is_finished_without_a_copy(tree):
     assert paths[filed] == str(seen / "2021" / "03" / "IMG.jpg")
     assert sorted(p.name for p in month.iterdir()) == ["IMG.jpg"]
     assert arrived(tree) == {}
+
+
+def test_a_locked_year_holds_back_only_its_own_pictures(tree):
+    seen = tree.parent.parent / "photos"
+    locked = tree.parent / "2019"
+    locked.mkdir()
+    locked.chmod(0o555)
+
+    async def scenario():
+        kept = await _waiting(tree, "IMG_1.jpg", b"locked out",
+                              datetime.datetime(2019, 7, 1, 12, tzinfo=datetime.UTC))
+        filed = await _waiting(tree, "IMG_2.jpg", b"free to go",
+                               datetime.datetime(2021, 3, 2, 12, tzinfo=datetime.UTC))
+        return kept, filed, await place.settle(), await _paths()
+
+    try:
+        kept, filed, said, paths = run(scenario())
+    finally:
+        locked.chmod(0o755)
+    assert said["placed"] == 1 and said["refused"] == 1
+    assert paths[kept] == str(seen / offers.WAITING / "IMG_1.jpg")
+    assert paths[filed] == str(seen / "2021" / "03" / "IMG_2.jpg")
+    assert arrived(tree) == {"IMG_1.jpg": b"locked out"}

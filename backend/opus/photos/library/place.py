@@ -91,15 +91,16 @@ async def settle() -> dict:
 
         for file_id, path, taken_at, checksum in rows:
             where = _where(taken_at, zone)
-            (write_root / where).mkdir(parents=True, exist_ok=True)
             name = Path(path).name
             source = offers.waiting_room(config) / name
             try:
+                (write_root / where).mkdir(parents=True, exist_ok=True)
                 target = await offers.land(session, source, write_root / where,
                                            read_root / where, name, checksum)
                 source.unlink()
             except OSError as why:
                 log.warning("could not place %s: %s", path, why)
+                refused += 1
                 continue
 
             stat = target.stat()
