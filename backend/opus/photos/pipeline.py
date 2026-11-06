@@ -151,10 +151,13 @@ async def once() -> dict:
 
     # The grouping, but only where a year has gained enough to be worth redoing.
     # It is the one step that rewrites what is already there.
+    async with SessionLocal() as session:
+        waiting = await _pending(session)
     if waiting["ungrouped"] >= ENOUGH_NEW:
         grouped = await _step("grouping", cluster.run)
         did["groups"] = grouped.get("clusters", 0)
         did["recognised"] = grouped.get("named", 0)
+        did["named"] = grouped.get("members", 0)
         did["aged"] = (await _step("ages", ages.run)).get("aged", 0)
 
     # after the grouping, because it is the grouping that says whose a face is

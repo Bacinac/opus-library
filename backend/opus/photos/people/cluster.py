@@ -139,12 +139,13 @@ async def run() -> dict:
         # the run view never has to work them out
         await refresh_centroids(session)
         offered = await recognise.run(session)
+        members = await recognise.name_members(session)
         clusters = (await session.execute(
             select(func.count()).select_from(FaceCluster)
             .where(FaceCluster.generation == FACE_GENERATION))).scalar_one()
         await session.commit()
     return {"clusters": clusters, "kept_names": kept, "adopted": adopted, "welded": joined,
-            "named": offered["named"]}
+            "named": offered["named"], "members": members}
 
 
 async def _faces(session, cuts: _Cuts) -> tuple[list[int], dict[int, int], dict[int, int | None]]:

@@ -187,3 +187,75 @@ def test_only_nameless_groups_with_enough_faces_and_a_date_are_asked(clean):
     said, owners, _ = recognised(build)
     assert said == {"considered": 0, "named": 0, "unsure": 0}
     assert owners["thin"] is None and owners["undated"] is None
+
+
+def members(build) -> tuple[int, dict[str, str | None]]:
+    house = House()
+
+    async def go():
+        async with db.SessionLocal() as session:
+            await build(session, house)
+            await session.commit()
+            said = await recognise.name_members(session)
+            await session.commit()
+            names = {pid: name for name, pid in house.people.items()}
+            faces = (await session.execute(select(Face.id, Face.person_id))).all()
+        return said, {label: names.get(dict(faces)[fid]) for label, fid in house.newcomers.items()}
+
+    house.newcomers = {}
+    return run(go())
+
+
+async def _newcomer(session, house, label: str, group: str, *, sim: float = 1.0,
+                    year: int = 2024, not_person: str | None = None,
+                    person: str | None = None) -> None:
+    house.photos += 1
+    photo = Photo(checksum=hashlib.sha1(str(house.photos).encode()).digest(),
+                  taken_at=datetime.datetime(year, 6, 1, tzinfo=datetime.UTC))
+    session.add(photo)
+    await session.flush()
+    centroid = (await session.get(FaceCluster, house.groups[group])).centroid
+    house.axes += 1
+    vector = np.asarray(centroid) * sim
+    vector[house.axes] = (1 - sim ** 2) ** 0.5
+    face = Face(photo_id=photo.id, x=0.1, y=0.1, w=0.2, h=0.2, score=0.9,
+                embedding=vector.tolist(), generation=FACE_GENERATION, sharpness=1.0,
+                cluster_id=house.groups[group], person_id=house.people.get(person),
+                not_person_id=house.people.get(not_person))
+    session.add(face)
+    await session.flush()
+    house.newcomers[label] = face.id
+
+
+def test_a_new_face_takes_a_group_name_only_if_it_resembles_it_and_nothing_forbids_it(clean):
+    async def build(session, house):
+        await house.person(session, "Ana", datetime.date(2010, 1, 1))
+        await house.person(session, "Bea")
+        await house.group(session, "ana", [2024] * 3, person="Ana")
+        await house.group(session, "nobody", [2024] * 3)
+        await _newcomer(session, house, "alike", "ana", sim=0.8)
+        await _newcomer(session, house, "stranger", "ana", sim=0.4)
+        await _newcomer(session, house, "taken_off", "ana", sim=0.9, not_person="Ana")
+        await _newcomer(session, house, "before_born", "ana", sim=0.9, year=2005)
+        await _newcomer(session, house, "someone_elses", "ana", sim=0.9, person="Bea")
+        await _newcomer(session, house, "in_a_nameless_group", "nobody", sim=0.9)
+
+    said, whose = members(build)
+    assert said == 1
+    assert whose == {"alike": "Ana", "stranger": None, "taken_off": None, "before_born": None,
+                     "someone_elses": "Bea", "in_a_nameless_group": None}
+
+
+def test_a_group_recognised_afterwards_leaves_out_a_face_taken_off_that_person(clean):
+    async def build(session, house):
+        await house.person(session, "Ana")
+        await house.group(session, "known", [2024], person="Ana")
+        await house.group(session, "new", [2024, 2024])
+        cluster = await session.get(FaceCluster, house.groups["new"])
+        cluster.centroid = (await session.get(FaceCluster, house.groups["known"])).centroid
+        one = (await session.execute(select(Face).where(Face.cluster_id == cluster.id))).scalars().first()
+        one.not_person_id = house.people["Ana"]
+
+    _, owners, faces = recognised(build)
+    assert owners["new"] == "Ana"
+    assert faces["new"] == {"Ana", None}

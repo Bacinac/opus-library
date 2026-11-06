@@ -183,6 +183,10 @@ class Face(Base):
     # Set when somebody names the cluster it was in; never cleared by a machine.
     person_id: Mapped[int | None] = mapped_column(
         ForeignKey("photo_people.id", ondelete="SET NULL"))
+    # Whom a human took this face off. The next grouping puts it back beside the
+    # same faces, and without this it would be handed the same name again.
+    not_person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("photo_people.id", ondelete="SET NULL"))
 
     # fractions of the frame, 0..1
     x: Mapped[float] = mapped_column(Float)

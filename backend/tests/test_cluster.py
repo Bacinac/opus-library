@@ -30,7 +30,8 @@ def test_regrouping_the_household(clean):
     scene = Scene()
     known = run(scene.build())
     said = run(cluster.run())
-    assert said == {"clusters": 6, "kept_names": 1, "adopted": 1, "welded": 1, "named": 1}
+    assert said == {"clusters": 6, "kept_names": 1, "adopted": 1, "welded": 1, "named": 1,
+                    "members": 9}
 
     groups, people, named = run(_grouped(scene))
     assert groups.pop(None) == {"blurred"}
@@ -40,7 +41,7 @@ def test_regrouping_the_household(clean):
     assert named[frozenset({"b2022"})] == known["bea"]
     assert named[frozenset({"a2020"})] is None
     assert people["b2022"] == {known["bea"]}
-    assert people["b2020"] == {known["bea"], None}
+    assert people["b2020"] == {known["bea"]}
     assert people["a2020"] == {None}
 
 
@@ -65,7 +66,8 @@ def test_a_welded_island_carries_its_name(clean):
     scene = Scene()
     known = run(scene.build(ann=True))
     said = run(cluster.run())
-    assert said == {"clusters": 6, "kept_names": 2, "adopted": 1, "welded": 1, "named": 2}
+    assert said == {"clusters": 6, "kept_names": 2, "adopted": 1, "welded": 1, "named": 2,
+                    "members": 22}
 
     groups, people, named = run(_grouped(scene))
     assert named[frozenset({"a2020"})] == known["ann"]

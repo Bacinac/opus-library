@@ -167,6 +167,22 @@ def test_single_faces_are_given_taken_off_and_thrown_away(household):
     assert all(by_id[face][1] is not None for face in a2021[5:])
 
 
+def test_a_face_taken_off_a_person_remembers_whom(household):
+    scene, known, _ = household
+
+    async def scenario():
+        a2021 = await _faces(scene, "a2021")
+        async with library(await signed_in("boss")) as client:
+            await client.post("/api/photos/faces/person",
+                              json={"faces": a2021[:1], "person_id": known["bea"]})
+            await client.post("/api/photos/faces/detach", json={"faces": a2021[:1]})
+            await client.post("/api/photos/faces/detach", json={"faces": a2021[:1]})
+        async with db.SessionLocal() as session:
+            return await session.scalar(select(Face.not_person_id).where(Face.id == a2021[0]))
+
+    assert run(scenario()) == known["bea"]
+
+
 def test_groups_are_taken_off_and_thrown_away_in_bulk(household):
     scene, known, reels = household
 

@@ -254,7 +254,9 @@ async def detach_faces(session, config, faces: list[int]) -> dict:
     groups = await _groups_of(session, faces)
     loosened = (await session.execute(
         Face.__table__.update().where(Face.id.in_(faces))
-        .values(person_id=None, cluster_id=None).returning(Face.id))).all()
+        .values(person_id=None, cluster_id=None,
+                not_person_id=func.coalesce(Face.person_id, Face.not_person_id))
+        .returning(Face.id))).all()
     await _regrouped(session, groups)
     await session.commit()
     return {"faces": len(loosened), "reels": portraits.forget_morphs(config, owners)}
@@ -298,7 +300,9 @@ async def detach_groups(session, config, groups: list[int]) -> dict:
     owners = await _owners_of_groups(session, groups)
     faces = (await session.execute(
         Face.__table__.update().where(Face.cluster_id.in_(groups))
-        .values(person_id=None).returning(Face.id))).all()
+        .values(person_id=None,
+                not_person_id=func.coalesce(Face.person_id, Face.not_person_id))
+        .returning(Face.id))).all()
     loosened = (await session.execute(
         FaceCluster.__table__.update().where(FaceCluster.id.in_(groups))
         .values(person_id=None).returning(FaceCluster.id))).all()

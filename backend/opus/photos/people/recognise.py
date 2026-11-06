@@ -89,7 +89,28 @@ async def run(session) -> dict:
             UPDATE photo_face_clusters SET person_id = :pid WHERE id = :cid
         """), {"pid": row.person_id, "cid": row.id})
         await session.execute(text("""
-            UPDATE photo_faces SET person_id = :pid WHERE cluster_id = :cid
+            UPDATE photo_faces SET person_id = :pid
+            WHERE cluster_id = :cid AND not_person_id IS DISTINCT FROM :pid
         """), {"pid": row.person_id, "cid": row.id})
         named += 1
     return {"considered": len(rows), "named": named, "unsure": unsure}
+
+
+async def name_members(session) -> int:
+    """A new face that joined a named group takes the group's name.
+
+    A group's name is carried over by the votes of the faces already holding it,
+    so one that arrives later sits in the right group and still belongs to nobody:
+    nothing shows it under the person it was found to be. Each face has to clear
+    KNOWN itself, because a group is 98 % pure and the name is what the next
+    grouping votes with, so the rest stay nameless rather than start a wrong one."""
+    done = await session.execute(text("""
+        UPDATE photo_faces f SET person_id = c.person_id
+        FROM photo_face_clusters c, photo_people pp, photos p
+        WHERE f.cluster_id = c.id AND pp.id = c.person_id AND p.id = f.photo_id
+          AND f.person_id IS NULL
+          AND f.not_person_id IS DISTINCT FROM c.person_id
+          AND 1 - (f.embedding <=> c.centroid) >= :known
+          AND (pp.born_on IS NULL OR p.taken_at IS NULL OR p.taken_at::date >= pp.born_on)
+    """), {"known": KNOWN})
+    return done.rowcount
