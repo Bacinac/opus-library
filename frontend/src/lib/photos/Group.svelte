@@ -138,7 +138,7 @@
 			leans = {};
 			leaning = [];
 			again();
-			known.load();
+			known.load(true);
 			request<{ leanings: { face: number; name: string }[]; people: typeof leaning }>(
 				`/api/photos/clusters/${id}/leanings`
 			).then((d) => {
@@ -386,7 +386,15 @@
 </Dialog>
 
 {#if looking}
-	<PhotoViewer photo={looking as never} onclose={() => (looking = null)} />
+	<PhotoViewer
+		photo={looking as never}
+		canEdit={me.admin}
+		onfaces={() => {
+			again();
+			onchanged?.();
+		}}
+		onclose={() => (looking = null)}
+	/>
 {/if}
 
 <style>
