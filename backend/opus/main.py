@@ -10,6 +10,7 @@ from opus_core.door import Door
 from opus_core.encoding import CompressJSON
 
 from opus import acquire, auth, landing
+from opus.config import settings
 from opus.api.routes import router
 from opus.db import SessionLocal
 from opus.music.pipeline import (download as music_download, monitor as music_monitor,
@@ -48,27 +49,31 @@ opus_auth.quiet_access_log()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # each half watches its own downloads and its own followed things: an
-    # episode airing and a record coming out are the same event to the user and
-    # nothing alike to the code that has to notice them
     pictures_store.prepare()
-    loops = [
-        asyncio.create_task(music_download.poll_downloads_loop()),
-        asyncio.create_task(music_monitor.monitor_loop()),
-        asyncio.create_task(music_records.records_loop()),
-        asyncio.create_task(video_download.poll_downloads_loop()),
-        asyncio.create_task(video_monitor.monitor_loop()),
-        asyncio.create_task(video_profiles.profiles_loop()),
-        asyncio.create_task(video_awards.awards_loop()),
-        asyncio.create_task(video_streaming.streaming_loop()),
-        asyncio.create_task(video_credits.credits_loop()),
-        asyncio.create_task(landing.sweep_loop()),
-        asyncio.create_task(library_scan.resume_extract()),
-        # the photograph half had no loop of its own: every pass waited
-        # to be asked, so a folder dropped in stayed a folder of files
-        asyncio.create_task(photos_pipeline.watch_loop()),
-        asyncio.create_task(pictures_catalogue.pictures_loop()),
-    ]
+    loops = []
+    if settings.role == "production":
+        # each half watches its own downloads and its own followed things: an
+        # episode airing and a record coming out are the same event to the user
+        # and nothing alike to the code that has to notice them
+        loops = [
+            asyncio.create_task(music_download.poll_downloads_loop()),
+            asyncio.create_task(music_monitor.monitor_loop()),
+            asyncio.create_task(music_records.records_loop()),
+            asyncio.create_task(video_download.poll_downloads_loop()),
+            asyncio.create_task(video_monitor.monitor_loop()),
+            asyncio.create_task(video_profiles.profiles_loop()),
+            asyncio.create_task(video_awards.awards_loop()),
+            asyncio.create_task(video_streaming.streaming_loop()),
+            asyncio.create_task(video_credits.credits_loop()),
+            asyncio.create_task(landing.sweep_loop()),
+            asyncio.create_task(library_scan.resume_extract()),
+            # the photograph half had no loop of its own: every pass waited
+            # to be asked, so a folder dropped in stayed a folder of files
+            asyncio.create_task(photos_pipeline.watch_loop()),
+            asyncio.create_task(pictures_catalogue.pictures_loop()),
+        ]
+    else:
+        logging.getLogger(__name__).warning("development role: no background loops")
     yield
     for loop in loops:
         loop.cancel()

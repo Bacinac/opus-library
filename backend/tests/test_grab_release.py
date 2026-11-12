@@ -1,15 +1,18 @@
+import errno
 import logging
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from conftest import run
-from opus import db
+from opus import db, destination
 from opus.acquire import AcquireError
 from opus.models import (Artist, MusicDownload, MusicDownloadStatus, Release, ReleaseStatus,
                          Track)
 from opus.music.pipeline import choose, state
-from opus.music.pipeline.grab import MAX_RECOVERY_DOWNLOADS, _stop_recovering, grab_release
+from opus.music.pipeline.grab import (MAX_RECOVERY_DOWNLOADS, _stop_recovering, grab_candidate,
+                                      grab_release)
 from opus.music.channels.base import Candidate, CandidateFile, Contents
 from opus.music.metadata import tracklists
 
@@ -385,3 +388,17 @@ def test_a_long_bracket_is_left_off_only_when_the_whole_title_finds_nothing():
     assert run(choose._search(Tidal(), "Bob Dylan", "Blonde on Blonde")) == ["the live take"]
     assert run(choose._search(Tidal(), "Bob Dylan", "(Untitled)")) == []
     assert asked == ["Blonde on Blonde", "(Untitled)"]
+
+
+def test_nothing_is_searched_or_grabbed_while_the_shelf_refuses_files(grab, monkeypatch):
+    monkeypatch.setattr(destination, "_refused", {})
+    monkeypatch.setattr(destination, "_takes", lambda refusal: False)
+    destination.refuse(destination.Refused(Path("/music"), Path("/music"), errno.EROFS, 0))
+    release_id = run(_release())
+    grab.channel("sabnzbd", post("sabnzbd", "Somebody-Record"), partial=False)
+
+    assert _grab(release_id) == (ReleaseStatus.FAILED, [])
+    assert _grab(release_id, recovery=True) == (ReleaseStatus.FAILED, [])
+    assert not run(grab_candidate(release_id, "sabnzbd", "Somebody-Record",
+                                  {"title": "Somebody-Record"}))
+    assert grab.heard == [] and run(_downloads(release_id)) == []

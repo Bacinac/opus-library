@@ -1,3 +1,4 @@
+import errno
 import struct
 import subprocess
 from pathlib import Path
@@ -11,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from conftest import run
-from opus import db
+from opus import db, destination
 from opus.models import (Artist, MusicDownload, MusicDownloadStatus, MusicFile, Release,
                          ReleaseStatus, Setting, Track)
 from opus.music.metadata import artwork
@@ -67,7 +68,7 @@ class Import:
         self.edition = None
         monkeypatch.setattr(artwork, "refresh_release_artwork", self._nothing)
         monkeypatch.setattr(artwork, "chosen_url", self._no_url)
-        monkeypatch.setattr(importer, "_cleanup_downloader", self._cleanup)
+        monkeypatch.setattr(grab, "drop_landing", self._cleanup)
         monkeypatch.setattr(grab, "spawn_grab", self._grab)
         monkeypatch.setattr(judge, "_confirm_downloaded_edition", self._edition)
         monkeypatch.setattr(judge, "_looks_transcoded", lambda path: path.name.startswith("fake"))
@@ -212,7 +213,8 @@ def test_one_album_is_one_mix(importing):
                                 "one album is one mix: this download is mono and stereo")
     assert said["release"] == (ReleaseStatus.FAILED, None)
     assert said["files"] == []
-    assert importing.said == [("grab", release_id, "full", True)]
+    assert importing.said == [("cleanup", download_id, "job-1"),
+                              ("grab", release_id, "full", True)]
 
 
 def test_a_surround_edition_must_be_surround(importing):
@@ -304,7 +306,8 @@ def test_a_replacement_must_be_whole(importing):
     said = run(importing.outcome(download_id, release_id))
     assert said["download"] == (MusicDownloadStatus.REJECTED,
                                 "would leave 1 of 3 tracks unfilled — not a replacement")
-    assert importing.said == [("grab", release_id, "full", True)]
+    assert importing.said == [("cleanup", download_id, "job-1"),
+                              ("grab", release_id, "full", True)]
 
 
 def test_a_lossless_profile_refuses_a_transcode(importing):
@@ -418,6 +421,7 @@ def test_a_folder_outside_the_landing_zone_fails(importing):
     assert "is not inside its landing root" in said["download"][1]
     assert said["release"] == (ReleaseStatus.FAILED, None)
     assert not said["live"]
+    assert importing.said == [("cleanup", download_id, "else")]
 
 
 def test_a_download_that_is_gone_is_left_alone(importing):
@@ -442,7 +446,8 @@ def test_a_different_mix_than_the_shelf_holds_is_refused(importing):
     assert said["download"] == (MusicDownloadStatus.REJECTED,
                                 "one album is one mix: this download is 5.1 but the release holds stereo")
     assert said["release"] == (ReleaseStatus.NONE, None)
-    assert importing.said == [("grab", release_id, "replace", True)]
+    assert importing.said == [("cleanup", download_id, "job-1"),
+                              ("grab", release_id, "replace", True)]
 
 
 def test_the_cover_and_the_portrait_go_with_the_files(importing, monkeypatch):
@@ -464,3 +469,37 @@ def test_the_cover_and_the_portrait_go_with_the_files(importing, monkeypatch):
     assert (importing.music / "Somebody" / "folder.jpg").read_bytes() == b"https://images.example/artist.jpg"
     assert [p.data for p in mutagen.File(album / "01 - Morning.flac").pictures] == [
         b"https://images.example/release.jpg"]
+
+
+def test_a_shelf_that_refuses_the_files_holds_the_download_until_it_takes_them(
+        importing, monkeypatch):
+    monkeypatch.setattr(destination, "_refused", {})
+    monkeypatch.setattr(destination, "_takes", lambda refusal: False)
+    download_id, release_id, _ = run(importing.setup())
+    for n, title in enumerate(TITLES, 1):
+        flac(importing.job() / f"{n:02d} {title}.flac", title, n)
+    write_tags = tagger._write_tags
+
+    def read_only(path, *args):
+        raise OSError(errno.EROFS, "Read-only file system", str(path))
+
+    monkeypatch.setattr(tagger, "_write_tags", read_only)
+    run(importer.import_download(download_id))
+
+    said = run(importing.outcome(download_id, release_id))
+    assert said["download"][0] is MusicDownloadStatus.DOWNLOADING
+    assert f"the shelf {importing.music} is read-only" in said["download"][1]
+    assert said["release"] == (ReleaseStatus.DOWNLOADING, None)
+    assert said["files"] == [] and said["live"]
+    assert importing.said == []
+    assert len(list(importing.job().glob("*.flac"))) == 3
+
+    monkeypatch.setattr(tagger, "_write_tags", write_tags)
+    monkeypatch.setattr(destination, "_takes", lambda refusal: True)
+    assert destination.refused(importing.music) is None
+    run(importer.import_download(download_id))
+
+    said = run(importing.outcome(download_id, release_id))
+    assert said["download"] == (MusicDownloadStatus.COMPLETE, None)
+    assert len(said["files"]) == 3
+    assert importing.said == [("cleanup", download_id, "job-1")]

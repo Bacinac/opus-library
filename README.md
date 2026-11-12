@@ -141,8 +141,8 @@ docker compose up -d
 ```
 
 Backend on `:8095`, interface on `:5280`, Postgres only inside the compose
-network. With `OPUS_UI_TARGET=dev` and `OPUS_DEV_RELOAD=1` in `.env`, code
-changes are live without a restart. `./check.sh` runs every check and test.
+network. With `OPUS_ROLE=development` in `.env`, code changes are live without
+a restart and no background loop runs. `./check.sh` runs every check and test.
 
 The public demo is the real interface over fictional data held in the browser;
 `frontend/build-demo.sh` builds it, see [docs/DEMO.md](docs/DEMO.md).

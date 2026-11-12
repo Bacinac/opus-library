@@ -3,10 +3,11 @@ importer."""
 
 import asyncio
 import logging
+from pathlib import Path
 
 from sqlalchemy import select
 
-from opus import acquire, importing
+from opus import acquire, destination, importing
 from opus.acquire import AcquireError
 from opus.video.metadata.webvideo import probe_url
 from opus.config import settings
@@ -14,7 +15,7 @@ from opus.db import SessionLocal
 from opus.models import VideoDownload, WebChannel, WebVideo
 from opus.settings_store import RuntimeConfig, current_runtime
 from opus.video.subtitles.probe import ProbeError
-from opus.video.pipeline import grab, importer
+from opus.video.pipeline import grab, importer, naming
 
 log = logging.getLogger("opus.video.pipeline")
 
@@ -63,25 +64,31 @@ async def _run_import(session, config: RuntimeConfig, dl: VideoDownload) -> None
     raises inside the handler that was supposed to record the failure. That is
     how a failed import used to leave the row sitting at `downloaded`."""
     download_id, channel, job_ref = dl.id, dl.channel, dl.job_ref
+    shelf, landing = naming.shelf(config, dl.kind), dl.job_ref.get("landing") or ""
+    if (refusal := destination.refused(shelf)) is not None:
+        await _hold_back(session, download_id, refusal)
+        return
     try:
-        await importer.import_download(session, config, dl, dl.job_ref.get("landing") or "")
+        await importer.import_download(session, config, dl, landing)
         await importing.commit(session)
     except importer.ImportFailure as exc:
         detail = str(exc)
     except ProbeError as exc:
         detail = str(exc)
     except Exception as exc:
+        refusal = await asyncio.to_thread(_refusal_of, exc, config, shelf, landing)
+        if refusal is not None:
+            await importing.rollback(session)
+            destination.refuse(refusal)
+            await _hold_back(session, download_id, refusal)
+            return
         log.exception("import failed for download %s", download_id)
         detail = f"import failed: {exc}"
     except BaseException:
         await importing.rollback(session)
         raise
     else:
-        if config.bool("cleanup_after_import"):
-            try:
-                await grab.make_channel(channel, config).drop_job(job_ref)
-            except AcquireError as exc:
-                log.warning("post-import cleanup failed for download %s: %s", download_id, exc)
+        await _drop_landing(config, download_id, channel, job_ref)
         return
     await importing.rollback(session)
     dl = await session.get(VideoDownload, download_id)
@@ -89,7 +96,40 @@ async def _run_import(session, config: RuntimeConfig, dl: VideoDownload) -> None
     dl.detail = detail
     await grab.bury(session, dl)
     await session.commit()
+    await _drop_landing(config, download_id, channel, job_ref)
     await grab.try_next_release(session, config, dl)
+
+
+def _refusal_of(exc: Exception, config: RuntimeConfig, shelf: Path,
+                landing: str) -> destination.Refused | None:
+    try:
+        source = importer.completed_dir(config, landing) if landing else None
+    except AcquireError:
+        source = None
+    return destination.refusal_of(exc, shelf, source)
+
+
+async def _hold_back(session, download_id: int, refusal: destination.Refused) -> None:
+    """The shelf refused the files, not the post: the download stays
+    `downloaded` in the landing zone, and the poll imports it once the shelf
+    takes files again. Burying the post and taking the next one would walk the
+    whole list into the same refusal."""
+    dl = await session.get(VideoDownload, download_id)
+    if dl.detail != str(refusal):
+        dl.detail = str(refusal)
+        await session.commit()
+
+
+async def _drop_landing(config: RuntimeConfig, download_id: int, channel: str,
+                        job_ref: dict) -> None:
+    """A download is done with its files once it has an outcome, imported or
+    not. The landing sweep is only the backstop: the daily inflow outran it."""
+    if not config.bool("cleanup_after_import"):
+        return
+    try:
+        await grab.make_channel(channel, config).drop_job(job_ref)
+    except AcquireError as exc:
+        log.warning("cleanup failed for download %s: %s", download_id, exc)
 
 
 async def _download_ids(session, states: tuple[str, ...]) -> list[int]:
@@ -154,6 +194,8 @@ async def poll_downloads_loop():
                         dl.state = "failed"
                         await grab.bury(session, dl)
                         await session.commit()
+                        if not stalled:
+                            await _drop_landing(config, dl.id, dl.channel, dl.job_ref)
                         await grab.try_next_release(session, config, dl)
                     elif status.state == "complete":
                         # the folder goes on the row before the import starts:

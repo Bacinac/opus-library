@@ -6,7 +6,7 @@ import logging
 
 from sqlalchemy import func, select, update
 
-from opus import passes
+from opus import destination, passes
 from opus.music.channels import enabled_channels
 from opus.acquire import AcquireError
 from opus.music.channels.base import Candidate, Channel
@@ -52,6 +52,9 @@ async def grab_candidate(release_id: int, channel_name: str, title: str, ref: di
     left standing: a packed or obfuscated post fails there exactly as an
     automatic one would."""
     config = await current_runtime()
+    if (refusal := destination.refused(config.get("music_dir"))) is not None:
+        log.error("release %s: %s", release_id, refusal)
+        return False
     channel = next((c for c in enabled_channels(config) if c.name == channel_name), None)
     if channel is None:
         log.error("release %s: %r is not an enabled channel", release_id, channel_name)
@@ -115,6 +118,9 @@ async def settle_interrupted(release_id: int | None = None) -> None:
 
 
 async def _grab_release(release_id: int, mode: str, recovery: bool):
+    if destination.refused((await current_runtime()).get("music_dir")) is not None:
+        await settle_interrupted(release_id)
+        return
     automatic = recovery or mode == "replace"
     brief = await choose.brief(release_id, automatic)
     if brief is None:
@@ -236,6 +242,38 @@ async def fail(download_id: int, detail: str):
     await _settle(download_id, MusicDownloadStatus.FAILED, detail)
 
 
+async def hold_back(download_id: int, refusal: destination.Refused) -> None:
+    """The shelf refused the files, not the source: the download waits in the
+    landing zone for the shelf to take them, instead of failing and sending for
+    another copy that would meet the same refusal."""
+    destination.refuse(refusal)
+    async with SessionLocal() as session:
+        download = await session.get(MusicDownload, download_id)
+        if download is None:
+            return
+        download.status = MusicDownloadStatus.DOWNLOADING
+        download.error = str(refusal)
+        await session.commit()
+
+
+async def drop_landing(download_id: int, channel_name: str, job_ref: dict | None,
+                       config) -> None:
+    """A download is done with its files once it has an outcome, imported or
+    not. The landing sweep is only the backstop: the daily inflow outran it."""
+    if not job_ref or not config.bool("cleanup_after_import"):
+        return
+    channels = {c.name: c for c in enabled_channels(config)}
+    channel = channels.get(channel_name)
+    if channel is None:
+        log.error("cleanup for download %s: channel %s is not enabled, job left in client",
+                  download_id, channel_name)
+        return
+    try:
+        await channel.drop_job(job_ref)
+    except Exception:
+        log.exception("download client job removal failed for download %s", download_id)
+
+
 async def _settle(download_id: int, status: MusicDownloadStatus, detail: str):
     async with SessionLocal() as session:
         download = await session.get(MusicDownload, download_id)
@@ -246,6 +284,7 @@ async def _settle(download_id: int, status: MusicDownloadStatus, detail: str):
         download.status = status
         download.error = detail
         release_id = download.release_id
+        channel_name, job_ref = download.channel, download.job_ref
         release = await session.get(Release, download.release_id)
         held = (await session.execute(
             select(func.count()).select_from(MusicFile)
@@ -260,6 +299,7 @@ async def _settle(download_id: int, status: MusicDownloadStatus, detail: str):
     state.live.pop(download_id, None)
     log.log(logging.ERROR if status is MusicDownloadStatus.FAILED else logging.INFO,
             "download %s %s: %s", download_id, status.value, detail)
+    await drop_landing(download_id, channel_name, job_ref, await current_runtime())
     # try the next source — grab_release skips channels already failed for
     # this release, and settles on FAILED only once every channel is exhausted.
     # An album that already holds files wants a REPLACEMENT, never a patch

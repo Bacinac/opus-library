@@ -8,8 +8,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from opus import importing
-from opus.music.channels import enabled_channels
+from opus import destination, importing
 from opus.db import SessionLocal
 from opus.music.metadata import artwork
 from opus.models import MusicDownload, MusicDownloadStatus, MusicFile, Release, ReleaseStatus, Track
@@ -53,7 +52,15 @@ async def _import_locked(download_id: int):
     judged, adopted_edition = await judge.judge_import(arrival, plan)
     if not judged:
         return
-    filed = await _file_import(arrival, plan, adopted_edition, cover_bytes, cover_mime)
+    try:
+        filed = await _file_import(arrival, plan, adopted_edition, cover_bytes, cover_mime)
+    except Exception as exc:
+        refusal = await asyncio.to_thread(destination.refusal_of, exc, Path(arrival.music_dir),
+                                          arrival.source_dir)
+        if refusal is None:
+            raise
+        await grab.hold_back(download_id, refusal)
+        return
     if filed is None:
         return
     plan, imported, remaining = filed
@@ -124,6 +131,7 @@ async def _file_import(arrival: Arrival, plan, adopted_edition, cover_bytes: byt
         await files._lock()
         await _record_files(session, files, download_id, release.id, imported)
         download.status = MusicDownloadStatus.COMPLETE
+        download.error = None
         # complete only when no track is left without a file (a missing-only
         # grab may have filled just part of the gap)
         remaining = (await session.execute(
@@ -224,9 +232,7 @@ async def _after_import(arrival: Arrival, plan, imported: dict[int, str], remain
         except Exception:
             log.exception("artist folder image failed for artist %s", arrival.artist_id)
 
-    if arrival.config.bool("cleanup_after_import"):
-        await _cleanup_downloader(download_id, arrival.channel_name, arrival.job_ref,
-                                  arrival.config)
+    await grab.drop_landing(download_id, arrival.channel_name, arrival.job_ref, arrival.config)
     state.live.pop(download_id, None)
     # a box set delivers this album and leaves its other albums where they are:
     # unclaimed files are the post's business, not a shortfall of the import
@@ -243,16 +249,3 @@ async def _after_import(arrival: Arrival, plan, imported: dict[int, str], remain
         # and is discarded unless it can deliver every track.
         grab.spawn_grab(release_id, mode="replace")
 
-
-async def _cleanup_downloader(download_id: int, channel_name: str, job_ref: dict,
-                              config):
-    channels = {c.name: c for c in enabled_channels(config)}
-    channel = channels.get(channel_name)
-    if channel is None:
-        log.error("cleanup for download %s: channel %s is not enabled, job left in client",
-                  download_id, channel_name)
-        return
-    try:
-        await channel.drop_job(job_ref)
-    except Exception:
-        log.exception("download client job removal failed for download %s", download_id)

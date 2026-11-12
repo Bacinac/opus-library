@@ -9,7 +9,7 @@ from opus.db import SessionLocal
 from opus.models import MusicDownload, MusicDownloadStatus, Release, ReleaseStatus
 from opus.settings_store import current_runtime
 from opus.music.tagging import tagger
-from opus.music.pipeline import state
+from opus.music.pipeline import grab, state
 
 log = logging.getLogger("opus.music.pipeline")
 
@@ -103,6 +103,7 @@ async def begin_import(download_id: int) -> Arrival | None:
             await session.commit()
             state.live.pop(download_id, None)
             log.error("import failed for download %s: %s", download_id, exc)
+            await grab.drop_landing(download_id, download.channel, download.job_ref, config)
             return None
         return Arrival(
             download_id=download_id, release_id=release.id, artist_id=artist.id,

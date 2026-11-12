@@ -35,7 +35,7 @@ def _episode_file(videos: list[Path], root: Path, episode) -> Path:
     raise ImportFailure(f"download contains no file for S{episode.season.number:02d}E{episode.number:02d}")
 
 
-def _completed_dir(config: RuntimeConfig, dl: VideoDownload, directory: str) -> Path:
+def completed_dir(config: RuntimeConfig, directory: str) -> Path:
     """Where the job's files are, as the library sees them.
 
     One swap and no searching. OPUS reports the exact folder in its own view of
@@ -199,7 +199,7 @@ async def _adopted_file(session, config: RuntimeConfig, dl: VideoDownload) -> Pa
 
 async def import_download(session, config: RuntimeConfig, dl: VideoDownload,
                            directory: str) -> None:
-    source_dir = _completed_dir(config, dl, directory) if directory else None
+    source_dir = completed_dir(config, directory) if directory else None
     videos = find_video_files(source_dir) if source_dir and source_dir.exists() else []
 
     if not videos:

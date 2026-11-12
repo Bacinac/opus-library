@@ -6,6 +6,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
+from opus import destination
 from opus.acquire import AcquireError
 from opus.video.channels.base import Candidate, Channel
 from opus.video.channels.qbittorrent import QbittorrentChannel
@@ -13,7 +14,7 @@ from opus.video.channels.sabnzbd import SabnzbdChannel
 from opus.video.channels.ytdlp import YtdlpChannel
 from opus.models import DeadPost, VideoDownload, Episode, VideoFile, Movie, WebVideo
 from opus.settings_store import RuntimeConfig
-from opus.video.pipeline import items, score, search
+from opus.video.pipeline import items, naming, score, search
 
 log = logging.getLogger("opus.video.pipeline")
 
@@ -163,6 +164,7 @@ async def try_next_release(session, config: RuntimeConfig, dl: VideoDownload) ->
 
 async def grab(session, config: RuntimeConfig, candidate: Candidate, *,
                movie: Movie | None = None, episode: Episode | None = None) -> VideoDownload:
+    _shelf_takes(config, "movie" if movie is not None else "episode")
     category = config.get("category_movies") if movie is not None else config.get("category_tv")
     channel = make_channel(candidate.channel, config)
     job_ref = await channel.download(candidate, category)
@@ -179,6 +181,7 @@ async def grab(session, config: RuntimeConfig, candidate: Candidate, *,
 
 
 async def grab_web_video(session, config: RuntimeConfig, video: WebVideo) -> VideoDownload:
+    _shelf_takes(config, "web_video")
     channel = YtdlpChannel(config)
     candidate = Candidate(
         channel="ytdlp", title=video.title or video.url, size=0, protocol="web",
@@ -191,3 +194,8 @@ async def grab_web_video(session, config: RuntimeConfig, video: WebVideo) -> Vid
     session.add(dl)
     await session.commit()
     return dl
+
+
+def _shelf_takes(config: RuntimeConfig, kind: str) -> None:
+    if (refusal := destination.refused(naming.shelf(config, kind))) is not None:
+        raise AcquireError(str(refusal))

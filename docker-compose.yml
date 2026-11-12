@@ -29,8 +29,9 @@ services:
     user: "${OPUS_APP_UID:-1000}:${OPUS_APP_GID:-1000}"
     env_file: .env
     environment:
-      # dev opts into auto-reload via .env; production runs the baked code plain
-      OPUS_DEV_RELOAD: ${OPUS_DEV_RELOAD:-0}
+      # production runs the baked code and every background loop; development
+      # reloads on change and runs none of them
+      OPUS_ROLE: ${OPUS_ROLE:?set OPUS_ROLE in .env to production or development}
       OPUS_DATABASE_URL: postgresql+psycopg://opus:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/opus
       # Arbitrary non-root UIDs have no image-owned home; tools that need a
       # transient cache use the writable tmpfs instead of the source mount.
@@ -82,16 +83,16 @@ services:
     restart: unless-stopped
 
   frontend:
-    # OPUS_UI_TARGET=prod (default) → vite build (adapter-node) served by
-    # server.js with the /api proxy; =dev → Vite dev server + HMR off the bind
-    # mounts below (which are inert in prod: server.js serves the baked build).
+    # production → vite build (adapter-node) served by server.js with the /api
+    # proxy; development → Vite dev server + HMR off the bind mounts below
+    # (which are inert in production: server.js serves the baked build).
     build:
       context: ./frontend
-      target: ${OPUS_UI_TARGET:-prod}
+      target: ${OPUS_ROLE:?set OPUS_ROLE in .env to production or development}
       args:
         VITE_OPUS_DOWNLOADS_URL: ${VITE_OPUS_DOWNLOADS_URL:-}
         VITE_OPUS_PLAYER_URL: ${VITE_OPUS_PLAYER_URL:-}
-    image: opus/library-ui:${OPUS_UI_TARGET:-prod}
+    image: opus/library-ui:${OPUS_ROLE:?set OPUS_ROLE in .env to production or development}
     container_name: opus_library_frontend
     logging: *log
     environment:

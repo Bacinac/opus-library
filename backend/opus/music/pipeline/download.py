@@ -5,7 +5,7 @@ import logging
 
 from sqlalchemy import select
 
-from opus import acquire
+from opus import acquire, destination
 from opus.music.channels import enabled_channels
 from opus.acquire import AcquireError
 from opus.config import settings
@@ -88,6 +88,9 @@ async def _poll_once():
         if status.state == "failed":
             await grab.fail(download.id, status.detail)
         elif status.state == "complete":
+            if (refusal := destination.refused(config.get("music_dir"))) is not None:
+                state.live[download.id]["detail"] = str(refusal)
+                continue
             if status.directory and download.job_ref.get("directory") != status.directory:
                 async with SessionLocal() as session:
                     row = await session.get(MusicDownload, download.id)

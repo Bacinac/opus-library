@@ -1,3 +1,5 @@
+from typing import Literal
+
 import opus_auth
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -11,6 +13,10 @@ class Settings(BaseSettings):
     model_config = {"env_prefix": "OPUS_"}
 
     database_url: str
+    # Required, with no default: a copy that forgot which one it is must not
+    # start. Only production runs the background loops; a development copy
+    # following the same wishlist would acquire the same releases again.
+    role: Literal["production", "development"]
     cookie_domain: str = ""
     # what sessions are signed with, the same in all three modules. There is no
     # fallback: without it no module could read another's session.

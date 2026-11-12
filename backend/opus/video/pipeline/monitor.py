@@ -6,14 +6,14 @@ import logging
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
-from opus import schedule
+from opus import destination, schedule
 from opus.acquire import AcquireError
 from opus.config import settings
 from opus.db import SessionLocal
 from opus.video.metadata import tmdb
 from opus.models import VideoDownload, Episode, Movie, Season, Series
 from opus.settings_store import RuntimeConfig, current_runtime
-from opus.video.pipeline import grab, items, search
+from opus.video.pipeline import grab, items, naming, search
 
 log = logging.getLogger("opus.video.pipeline")
 
@@ -85,7 +85,7 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
         select(Series).where(_FOLLOWED).options(
             selectinload(Series.seasons).selectinload(Season.episodes).selectinload(Episode.files)))
     active_ep = await items.active_ids(session, VideoDownload.episode_id)
-    for series in result.scalars():
+    for series in result.scalars() if _shelf_takes(config, "episode") else ():
         for season in series.seasons:
             # a series being followed does not make every episode of it wanted.
             # The library holds whole runs nobody asked for — the season and the
@@ -122,7 +122,7 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
     result = await session.execute(
         select(Movie).where(Movie.monitored.is_(True)).options(selectinload(Movie.files)))
     active_m = await items.active_ids(session, VideoDownload.movie_id)
-    for movie in result.scalars():
+    for movie in result.scalars() if _shelf_takes(config, "movie") else ():
         if movie.id in active_m or (movie.files and not movie.upgrade_to):
             continue
         try:
@@ -139,6 +139,10 @@ async def _monitor_pass(session, config: RuntimeConfig) -> None:
                 log.warning("monitor: every release for movie %s has already failed", movie.title)
         except AcquireError as exc:
             log.warning("monitor: movie %s grab failed: %s", movie.id, exc)
+
+
+def _shelf_takes(config: RuntimeConfig, kind: str) -> bool:
+    return destination.refused(naming.shelf(config, kind)) is None
 
 
 async def _upgrade(session, config: RuntimeConfig, candidates, *,

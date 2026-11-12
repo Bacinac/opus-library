@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import errno
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from conftest import library, run, signed_in
-from opus import acquire, db, importing
+from opus import acquire, db, destination, importing
 from opus.acquire import AcquireError, JobStatus
 from opus.models import (DeadPost, Episode, Movie, Season, Series, Setting, Subtitle, VideoDownload,
                          VideoFile)
@@ -144,7 +145,7 @@ def test_a_job_forgotten_past_the_grace_fails_and_the_next_release_is_asked_for(
 
     row = run(_row(lost))
     assert (row.state, row.detail) == ("failed", "sabnzbd lost the job: OPUS has no such job")
-    assert poll.replaced == [lost]
+    assert poll.replaced == [lost] and poll.dropped == [{"job": "j1"}]
 
 
 def test_a_job_still_at_nothing_inside_the_stall_grace_is_left_downloading(poll):
@@ -194,7 +195,7 @@ def test_a_failed_job_fails_its_row_with_the_reason(poll):
 
     row = run(_row(failing))
     assert (row.state, row.progress, row.detail) == ("failed", 0.7, "missing articles")
-    assert poll.replaced == [failing]
+    assert poll.replaced == [failing] and poll.dropped == [{"job": "j1"}]
 
 
 def test_opus_unreachable_leaves_the_row_as_it_was_and_says_why(poll):
@@ -244,7 +245,8 @@ def test_the_job_is_kept_when_cleanup_after_import_is_off(poll, monkeypatch):
     assert poll.dropped == []
 
 
-def test_a_failed_import_fails_the_row_and_asks_for_the_next_release(poll, monkeypatch):
+def test_a_failed_import_fails_the_row_drops_its_landing_and_asks_for_the_next_release(
+        poll, monkeypatch):
     async def import_download(session, config, dl, directory):
         dl.state = "imported"
         raise importer.ImportFailure(f"completed download not found at {directory}")
@@ -258,7 +260,8 @@ def test_a_failed_import_fails_the_row_and_asks_for_the_next_release(poll, monke
     row = run(_row(broken))
     assert (row.state, row.detail) == ("failed", "completed download not found at /landing/movies/Film")
     assert row.job_ref["landing"] == "/landing/movies/Film"
-    assert poll.replaced == [broken] and poll.dropped == []
+    assert poll.replaced == [broken]
+    assert poll.dropped == [{"job": "j1", "landing": "/landing/movies/Film"}]
 
 
 def test_an_import_stranded_by_a_restart_is_resumed_from_the_recorded_folder(poll, monkeypatch):
@@ -842,3 +845,73 @@ def test_clearing_a_failed_row_from_the_queue_leaves_its_post_dead(quick, monkey
     cleared, listed = run(scenario())
     assert cleared.status_code == 204
     assert [r["standing"] for r in listed.json()] == ["failed"]
+
+
+@pytest.fixture
+def read_only(monkeypatch):
+    monkeypatch.setattr(destination, "_refused", {})
+    monkeypatch.setattr(destination, "_takes", lambda refusal: False)
+
+    def shelf(path: Path) -> None:
+        destination.refuse(destination.Refused(path, path, errno.EROFS, 0))
+    return shelf
+
+
+def test_a_shelf_that_refuses_the_film_holds_it_in_the_landing_and_buries_nothing(
+        poll, read_only, monkeypatch, tmp_path):
+    movies = tmp_path / "movies"
+    run(_setting("movies_dir", str(movies)))
+    tried = []
+
+    async def refused(session, config, dl, directory):
+        tried.append(dl.id)
+        raise OSError(errno.EROFS, "Read-only file system", str(movies / "Film (2020).mkv"))
+
+    monkeypatch.setattr(importer, "import_download", refused)
+    film = run(_film())
+    held = run(_download(film, release_guid="g-film"))
+    poll.statuses["j1"] = JobStatus("complete", directory="/landing/movies/Film")
+    poll.once()
+    poll.once()
+
+    row = run(_row(held))
+    assert row.state == "downloaded"
+    assert f"the shelf {movies} is read-only" in row.detail
+    assert tried == [held]
+    assert poll.replaced == [] and poll.dropped == [] and run(_dead_posts()) == []
+
+    async def imported(session, config, dl, directory):
+        dl.state = "imported"
+
+    monkeypatch.setattr(importer, "import_download", imported)
+    monkeypatch.setattr(destination, "_takes", lambda refusal: True)
+    poll.once()
+
+    assert run(_row(held)).state == "imported"
+    assert poll.dropped == [{"job": "j1", "landing": "/landing/movies/Film"}]
+
+
+def test_nothing_is_taken_while_the_shelf_refuses_files(releases, read_only):
+    read_only(Path("/movies"))
+    film = run(_film())
+    failed = run(_download(film, release_title="Film.A", release_guid="guid-Film.A",
+                           state="failed"))
+    releases.offered.append(release("Film.B"))
+
+    assert replace(failed) == []
+    assert releases.grabbed == []
+
+
+def test_the_monitor_does_not_search_for_a_shelf_that_refuses_files(
+        releases, read_only, monkeypatch):
+    read_only(Path("/movies"))
+    asked = []
+
+    async def search_candidates(config, **item):
+        asked.append(item)
+        return [release("Film.A")]
+
+    monkeypatch.setattr(search, "search_candidates", search_candidates)
+    _pass_over(run(_monitored_film()))
+
+    assert asked == [] and releases.grabbed == []

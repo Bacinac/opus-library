@@ -73,7 +73,7 @@ def candidates(root: Path) -> list[Path]:
     return out
 
 
-def _size(folder: Path) -> int:
+def size(folder: Path) -> int:
     """The reclaimable bytes below one candidate.
 
     This deliberately has the same definition as ``remove``. A file can
@@ -135,11 +135,11 @@ async def root() -> Path | None:
 
 
 async def remove(folder: Path, why: str, idle: float | None = None) -> int:
-    size = await asyncio.to_thread(_size, folder)
-    log.info("landing sweep: %s %s (%.1f GB%s)", why, folder, size / 1024 ** 3,
+    freed = await asyncio.to_thread(size, folder)
+    log.info("landing sweep: %s %s (%.1f GB%s)", why, folder, freed / 1024 ** 3,
              f", idle {idle:.0f} d" if idle is not None else "")
     await asyncio.to_thread(shutil.rmtree, folder, True)
-    return size
+    return freed
 
 
 async def preview(where: Path, keep: float, active: set[Path]) -> dict:
@@ -162,7 +162,7 @@ async def preview(where: Path, keep: float, active: set[Path]) -> dict:
         stale.append({
             "path": str(folder.relative_to(where)),
             "idle_days": round(idle, 1),
-            "bytes": await asyncio.to_thread(_size, folder),
+            "bytes": await asyncio.to_thread(size, folder),
         })
     stale.sort(key=lambda item: (-item["bytes"], item["path"]))
     return {

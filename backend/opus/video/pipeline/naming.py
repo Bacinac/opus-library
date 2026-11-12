@@ -6,11 +6,17 @@ from pathlib import Path
 from opus.models import Episode, Movie, WebVideo
 from opus.settings_store import RuntimeConfig
 
+_SHELVES = {"movie": "movies_dir", "episode": "tv_dir", "web_video": "video_dir"}
+
+
+def shelf(config: RuntimeConfig, kind: str) -> Path:
+    return Path(config.get(_SHELVES[kind]))
+
 
 def render_movie_path(config: RuntimeConfig, movie: Movie, ext: str) -> Path:
     rendered = config.get("movie_naming").format(
         title=safe(movie.title), year=movie.year or "")
-    return Path(config.get("movies_dir")) / f"{rendered.strip()}{ext}"
+    return shelf(config, "movie") / f"{rendered.strip()}{ext}"
 
 
 def render_episode_path(config: RuntimeConfig, episode: Episode, ext: str) -> Path:
@@ -25,12 +31,12 @@ def render_episode_path(config: RuntimeConfig, episode: Episode, ext: str) -> Pa
         series=safe(series.title), year=series.year or "",
         ss=f"{episode.season.number:02d}", ee=f"{episode.number:02d}",
         title=safe(episode.title))
-    return Path(config.get("tv_dir")) / f"{rendered.strip()}{ext}"
+    return shelf(config, "episode") / f"{rendered.strip()}{ext}"
 
 
 def render_web_path(config: RuntimeConfig, video: WebVideo, source_name: str) -> Path:
     folder = video.channel.title if video.channel else (video.uploader or "Videos")
-    return Path(config.get("video_dir")) / folder / source_name
+    return shelf(config, "web_video") / folder / source_name
 
 
 # What a name may not contain. Not a Linux rule — only the slash is that — but a
